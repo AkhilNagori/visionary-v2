@@ -122,6 +122,109 @@ final class APIClient {
                                    body: encodeBody(["status": status, "result": result])))
     }
 
+    // MARK: - v3: modes & packs
+
+    /// GET /modes → {"modes": [Mode...], "active_mode": id|null}.
+    func modes() async throws -> (modes: [Mode], activeMode: String?) {
+        struct Response: Decodable {
+            let modes: [Mode]
+            let activeMode: String?
+        }
+        let r: Response = try await getJSON("modes")
+        return (r.modes, r.activeMode)
+    }
+
+    /// POST /modes/active {"id": "..."} — nil sends an explicit null,
+    /// which returns the glasses to classic single-press reading.
+    func setActiveMode(_ id: String?) async throws {
+        struct Body: Encodable {
+            let id: String?
+            enum CodingKeys: String, CodingKey { case id }
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                if let id = id { try c.encode(id, forKey: .id) }
+                else { try c.encodeNil(forKey: .id) }
+            }
+        }
+        _ = try await send(request("modes/active", method: "POST", body: encodeBody(Body(id: id))))
+    }
+
+    func packs() async throws -> [Pack] {
+        struct Response: Decodable { let packs: [Pack] }
+        let wrapper: Response = try await getJSON("packs")
+        return wrapper.packs
+    }
+
+    /// POST /packs/install {"url"} → the ids of the newly installed modes.
+    @discardableResult
+    func installPack(url: String) async throws -> [String] {
+        struct Response: Decodable {
+            let modes: [String]?
+            let installed: [String]?
+        }
+        let data = try await send(request("packs/install", method: "POST",
+                                          body: encodeBody(["url": url])))
+        let r = try? Self.decoder.decode(Response.self, from: data)
+        return r?.modes ?? r?.installed ?? []
+    }
+
+    func removePack(name: String) async throws {
+        _ = try await send(request("packs/\(name)", method: "DELETE"))
+    }
+
+    // MARK: - v3: flashcards
+
+    /// POST /flashcards/generate → number of cards minted from today's history.
+    @discardableResult
+    func flashcardsGenerate() async throws -> Int {
+        struct Response: Decodable {
+            let created: Int?
+            let count: Int?
+            let cards: [Flashcard]?
+        }
+        let data = try await send(request("flashcards/generate", method: "POST"))
+        let r = try? Self.decoder.decode(Response.self, from: data)
+        return r?.created ?? r?.count ?? r?.cards?.count ?? 0
+    }
+
+    func flashcardsDue() async throws -> [Flashcard] {
+        struct Response: Decodable { let cards: [Flashcard] }
+        let wrapper: Response = try await getJSON("flashcards/due")
+        return wrapper.cards
+    }
+
+    /// grade ∈ 0...3 (again / hard / good / easy).
+    func reviewFlashcard(id: Int, grade: Int) async throws {
+        _ = try await send(request("flashcards/\(id)/review", method: "POST",
+                                   body: encodeBody(["grade": grade])))
+    }
+
+    // MARK: - v3: listen, timers, events
+
+    /// POST /listen — the glasses record until silence (or maxS) and return
+    /// the transcript. Blocks for the whole capture, so the timeout stretches.
+    func listen(maxS: Double = 15) async throws -> String {
+        struct Response: Decodable { let text: String }
+        var r = request("listen", method: "POST", body: encodeBody(["max_s": maxS]))
+        r.timeoutInterval = maxS + 60
+        let wrapper: Response = try decode(try await send(r))
+        return wrapper.text
+    }
+
+    func timers() async throws -> [DeviceTimer] {
+        struct Response: Decodable { let timers: [DeviceTimer] }
+        let wrapper: Response = try await getJSON("timers")
+        return wrapper.timers
+    }
+
+    /// GET /events — a text/event-stream request for EventSource to hold open.
+    func eventsRequest() -> URLRequest {
+        var r = request("events")
+        r.timeoutInterval = 86_400
+        r.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        return r
+    }
+
     // MARK: - Plumbing
 
     private func request(_ path: String, method: String = "GET",
@@ -167,7 +270,7 @@ final class APIClient {
         catch { throw APIError.decoding }
     }
 
-    private func encodeBody(_ dict: [String: String]) -> Data? {
-        try? Self.encoder.encode(dict)
+    private func encodeBody<T: Encodable>(_ value: T) -> Data? {
+        try? Self.encoder.encode(value)
     }
 }

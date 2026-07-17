@@ -20,11 +20,13 @@ from typing import Callable, Optional, Tuple
 
 import audio
 import brain
+import events
 import memory
+import packs
 import state
 import vision
 import wakeword
-from modes import ask, describe, navigate, read, recorder, translate
+from modes import ask, describe, navigate, read, recorder, session, translate
 
 SIM = os.environ.get("VISIONARY_SIM") == "1"
 BUTTON_PIN = 17
@@ -277,6 +279,118 @@ class LoopManager:
                 self.reconcile()
 
 
+class ActiveModeManager:
+    """Owns the background thread for an `active_mode` whose pipeline is `loop`
+    or `session`.
+
+    see/ask/listen active modes run inline from a single press (packs.run_mode);
+    the two background pipelines need a stop_event and single-press stopping just
+    like the two-way interpreter and navigation assist, so main.py owns them
+    here, reconciled against config `active_mode`. A single press stops a running
+    background mode and clears active_mode. On a hard offline wall the mode
+    raises brain.BrainOffline; when a session ends on its own (stop word / turn
+    cap) or a loop exits, we clear active_mode so the watcher won't respawn it —
+    the device returns to classic read (same convention as translate/navigate)."""
+
+    _BG_PIPELINES = ("loop", "session")
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._thread = None  # type: Optional[threading.Thread]
+        self._stop = None  # type: Optional[threading.Event]
+        self._mode_id = None  # type: Optional[str]
+        self._shutdown = False
+
+    def _desired(self) -> Optional[dict]:
+        mode_id = state.load_config().get("active_mode")
+        if not mode_id:
+            return None  # common case (classic read): never touches the pack files
+        try:
+            mode = packs.load_modes().get(mode_id)
+        except Exception:
+            return None
+        if mode and mode.get("pipeline") in self._BG_PIPELINES:
+            return mode
+        return None
+
+    def reconcile(self) -> None:
+        mode = self._desired()
+        with self._lock:
+            alive = self._thread is not None and self._thread.is_alive()
+            if mode is None:
+                if alive and self._stop is not None:
+                    self._stop.set()
+                return
+            if alive and self._mode_id == mode["id"]:
+                return  # the right background mode is already running
+            if alive:
+                # active_mode switched to a different background mode; stop the
+                # old thread now, the next reconcile brings up the new one.
+                if self._stop is not None:
+                    self._stop.set()
+                return
+            stop = threading.Event()
+            self._stop = stop
+            self._mode_id = mode["id"]
+            self._thread = threading.Thread(
+                target=self._run, args=(stop, mode), daemon=True)
+            self._thread.start()
+
+    def active(self) -> bool:
+        with self._lock:
+            return (self._thread is not None and self._thread.is_alive()
+                    and self._stop is not None and not self._stop.is_set())
+
+    def stop(self) -> None:
+        with self._lock:
+            if self._stop is not None:
+                self._stop.set()
+            mode_id = self._mode_id
+        # persist active_mode off, or the watcher would respawn it within ~5s
+        self._clear_active_mode(mode_id)
+        audio.beep("ok")
+
+    def shutdown(self) -> None:
+        with self._lock:
+            self._shutdown = True
+            if self._stop is not None:
+                self._stop.set()
+
+    def _clear_active_mode(self, mode_id: Optional[str]) -> None:
+        cfg = state.load_config()
+        # only clear if it still points at the mode we were running (a concurrent
+        # API activation of a different mode must not be stomped)
+        if cfg.get("active_mode") is not None and (
+                mode_id is None or cfg.get("active_mode") == mode_id):
+            cfg["active_mode"] = None
+            state.save_config(cfg)
+
+    def _run(self, stop: threading.Event, mode: dict) -> None:
+        try:
+            if mode.get("pipeline") == "session":
+                session.run_session(mode, stop)
+            else:
+                packs.run_loop(mode, stop)
+        except brain.BrainOffline:
+            pass  # the mode already spoke its offline reason; cleared below
+        except Exception:
+            audio.beep("err")
+            audio.speak("That mode stopped after an error.")
+        finally:
+            with self._lock:
+                current = self._thread is threading.current_thread()
+                shutting = self._shutdown
+            # clear BEFORE nulling the thread so a watcher tick in this window
+            # sees active_mode gone and won't respawn the mode we just finished
+            if current and not shutting:
+                self._clear_active_mode(mode.get("id"))
+            with self._lock:
+                if self._thread is threading.current_thread():
+                    self._thread = None
+                    self._stop = None
+                    self._mode_id = None
+
+
 class WakeWordManager:
     """Reconciles the openWakeWord listener with config wake_word.enabled."""
 
@@ -314,7 +428,10 @@ class Dispatcher:
         self._navigate = LoopManager(
             "navigation", navigate.run_navigation,
             "Navigation assist off.", "Navigation assist stopped.")
-        self._loops = [self._translate, self._navigate]
+        self._active_mode = ActiveModeManager()
+        # every config-reconciled background activity; single-press stops any of
+        # them and each is torn down on shutdown
+        self._managers = [self._translate, self._navigate, self._active_mode]
         self._wake = WakeWordManager(self._on_wake)
         self._watch_stop = threading.Event()
         self._watch_thread = None  # type: Optional[threading.Thread]
@@ -336,15 +453,26 @@ class Dispatcher:
                 self._spawn(recorder.toggle, blocking=True)
             return
 
-        # a single press stops an active background loop instead of reading
+        # a single press stops an active background loop/session instead of reading
         if kind == "single" and active_before and active_after:
             self.stop_active_loops()
             return
 
-        if self.busy.locked() or not mode:
+        if self.busy.locked():
             return
 
         feats = cfg.get("features") or {}
+        # v3: an explicit "mode:<id>" gesture mapping runs that mode pack
+        if isinstance(mode, str) and mode.startswith("mode:"):
+            self._dispatch_mode(mode[len("mode:"):])
+            return
+        # v3: a single press runs the configured active_mode instead of classic read
+        active_mode = cfg.get("active_mode")
+        if kind == "single" and active_mode:
+            self._dispatch_mode(active_mode)
+            return
+        if not mode:
+            return
         if mode == "read":
             self._spawn(read.run_read)
         elif mode == "describe":
@@ -420,6 +548,36 @@ class Dispatcher:
             self._spawn(describe.run_describe)
         return True, None
 
+    def listen(self, max_s: float) -> dict:
+        """Synchronous record-until-silence + transcribe for POST /listen.
+
+        Holds the busy lock across the capture so it can't race a gesture
+        action; refuses (like capture) whenever the mic is already in use."""
+        self.reconcile()
+        if (recorder.is_recording() or self._any_loop_active()
+                or audio.capture_in_use() or not self.busy.acquire(False)):
+            return {"ok": False, "error": "busy"}
+        wav = None
+        try:
+            wav = audio.record_until_silence(max_s=float(max_s))
+            text = brain.transcribe(wav) if wav else ""
+            return {"ok": True, "text": text}
+        except brain.BrainOffline:
+            audio.beep("err")
+            audio.speak("I can't understand speech right now.")
+            return {"ok": False, "error": "offline"}
+        except Exception as e:
+            audio.beep("err")
+            audio.speak("Something went wrong.")
+            return {"ok": False, "error": str(e) or "listen failed"}
+        finally:
+            if wav is not None and os.path.exists(wav):
+                try:
+                    os.remove(wav)
+                except OSError:
+                    pass
+            self.busy.release()
+
     def status(self) -> dict:
         return {
             "ok": True,
@@ -434,8 +592,8 @@ class Dispatcher:
     def reconcile(self) -> None:
         """Bring background threads in line with config. Idempotent; called on
         every dispatch and by the ~5s watcher."""
-        for loop in self._loops:
-            loop.reconcile()
+        for manager in self._managers:
+            manager.reconcile()
         self._wake.reconcile()
 
     def start_watcher(self) -> None:
@@ -445,16 +603,16 @@ class Dispatcher:
     def cleanup(self) -> None:
         self._watch_stop.set()
         self._wake.stop()
-        for loop in self._loops:
-            loop.shutdown()
+        for manager in self._managers:
+            manager.shutdown()
 
     def stop_active_loops(self) -> None:
-        for loop in self._loops:
-            if loop.active():
-                loop.stop()
+        for manager in self._managers:
+            if manager.active():
+                manager.stop()
 
     def _any_loop_active(self) -> bool:
-        return any(loop.active() for loop in self._loops)
+        return any(manager.active() for manager in self._managers)
 
     def _watch(self) -> None:
         while not self._watch_stop.wait(CONFIG_POLL_S):
@@ -486,6 +644,37 @@ class Dispatcher:
             audio.speak("Something went wrong.")
         finally:
             self.busy.release()
+
+    # -- v3 mode dispatch -------------------------------------------------
+
+    def _dispatch_mode(self, mode_id: str) -> None:
+        """Run a mode pack by id on a busy-locked worker. see/ask/listen run
+        inline (packs.run_mode); loop/session raise ModeNeeds* and become a
+        reconciled background activity owned by ActiveModeManager."""
+        def worker() -> None:
+            if not self.busy.acquire(False):
+                return
+            try:
+                packs.run_mode(mode_id)
+            except (packs.ModeNeedsLoop, packs.ModeNeedsSession) as need:
+                self._activate_background(need.mode)
+            except Exception:
+                audio.beep("err")
+                audio.speak("Something went wrong.")
+            finally:
+                self.busy.release()
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _activate_background(self, mode: dict) -> None:
+        # loop/session modes run as a config-reconciled background activity keyed
+        # on active_mode (single-press stop + offline clearing live in the
+        # ActiveModeManager). Persist it if a gesture launched it, then reconcile.
+        cfg = state.load_config()
+        if cfg.get("active_mode") != mode.get("id"):
+            cfg["active_mode"] = mode["id"]
+            state.save_config(cfg)
+        self._active_mode.reconcile()
 
     # -- internals --------------------------------------------------------
 
@@ -590,6 +779,16 @@ class CommandServer:
             return {"ok": True, "jpeg_b64": base64.b64encode(jpeg).decode("ascii")}
         if cmd == "status":
             return self.dispatcher.status()
+        if cmd == "listen":
+            return self.dispatcher.listen(req.get("max_s", 15.0))
+        if cmd == "events":
+            seq, evs = events.get_since(req.get("since", 0))
+            return {"ok": True, "seq": seq, "events": evs}
+        if cmd == "timers":
+            # timers are in-RAM threading.Timers that fire in THIS (main) process;
+            # the api process reaches them only over UDS (like listen/events).
+            import timers
+            return {"ok": True, "timers": timers.list_timers()}
         return {"ok": False, "error": "unknown command"}
 
 

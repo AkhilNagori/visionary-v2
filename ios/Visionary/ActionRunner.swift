@@ -1,19 +1,41 @@
+import Combine
 import EventKit
 import Foundation
 
-/// Tier 3 agent actions: the glasses queue calendar_event / reminder actions
-/// via Claude tool-use; the phone executes them through EventKit and reports
-/// done/failed back to the device. Owned and started/stopped by AppState —
+extension Notification.Name {
+    /// Posted when the phone changes the device's action queue outside this
+    /// runner (the Actions inbox completing a send_text / email_draft / note),
+    /// so the badge count refreshes without waiting for the next poll.
+    static let visionaryActionsDidChange = Notification.Name("visionaryActionsDidChange")
+}
+
+/// Tier 3 agent actions: the glasses queue phone actions via Claude tool-use.
+/// The phone auto-executes ONLY calendar_event / reminder through EventKit and
+/// reports done/failed back to the device. send_text / email_draft / note can't
+/// be auto-sent by iOS — those stay pending on the device and surface here as
+/// `pendingInboxCount` for the Actions-inbox badge; ActionsInboxView owns
+/// executing and completing them. Owned and started/stopped by AppState —
 /// polls only while the app is active.
 @MainActor
-final class ActionRunner {
+final class ActionRunner: ObservableObject {
+    /// Pending actions waiting in the in-app Actions inbox (the badge count).
+    @Published private(set) var pendingInboxCount = 0
+
+    /// Action types the phone hands to the user instead of auto-executing.
+    static let inboxTypes: Set<String> = ["send_text", "email_draft", "note"]
+
     private let client: APIClient
     private var pollTask: Task<Void, Never>?
+    private var changeObserver: NSObjectProtocol?
     private var store: EKEventStore?
     // Executed but not yet acknowledged to the device (completeAction failed,
     // e.g. WiFi blip). Retried before executing anything new, so an event is
     // never added to the calendar twice.
     private var unreported: [Int: (status: String, result: String)] = [:]
+    // Notification-triggered polls can land mid-poll; coalesce instead of
+    // interleaving two passes over the same pending queue.
+    private var isPolling = false
+    private var needsRepoll = false
 
     private static let pollInterval: UInt64 = 10_000_000_000  // ns
 
@@ -22,11 +44,19 @@ final class ActionRunner {
     }
 
     func start() {
-        guard pollTask == nil else { return }
-        pollTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.poll()
-                try? await Task.sleep(nanoseconds: Self.pollInterval)
+        if pollTask == nil {
+            pollTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    await self?.poll()
+                    try? await Task.sleep(nanoseconds: Self.pollInterval)
+                }
+            }
+        }
+        if changeObserver == nil {
+            changeObserver = NotificationCenter.default.addObserver(
+                forName: .visionaryActionsDidChange, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in await self?.poll() }
             }
         }
     }
@@ -34,9 +64,26 @@ final class ActionRunner {
     func stop() {
         pollTask?.cancel()
         pollTask = nil
+        if let changeObserver = changeObserver {
+            NotificationCenter.default.removeObserver(changeObserver)
+        }
+        changeObserver = nil
     }
 
     private func poll() async {
+        if isPolling {
+            needsRepoll = true
+            return
+        }
+        isPolling = true
+        defer { isPolling = false }
+        repeat {
+            needsRepoll = false
+            await pollOnce()
+        } while needsRepoll
+    }
+
+    private func pollOnce() async {
         for (id, report) in unreported {
             do {
                 try await client.completeAction(id: id, status: report.status, result: report.result)
@@ -46,7 +93,9 @@ final class ActionRunner {
             }
         }
         guard let actions = try? await client.pendingActions() else { return }
-        for action in actions {
+        // Inbox types are never auto-executed — only counted for the badge.
+        pendingInboxCount = actions.filter { Self.inboxTypes.contains($0.type) }.count
+        for action in actions where !Self.inboxTypes.contains(action.type) {
             if Task.isCancelled { return }
             let (status, result) = await execute(action)
             do {

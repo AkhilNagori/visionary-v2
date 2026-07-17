@@ -140,6 +140,62 @@ TOOL_PHONE_ACTION = {
     },
 }
 
+TOOL_SET_TIMER = {
+    "name": "set_timer",
+    "description": (
+        "Start a named countdown timer for the wearer, e.g. 'set a pasta timer "
+        "for 8 minutes'. When it finishes the glasses announce it out loud. Use "
+        "this whenever the wearer asks to be timed or reminded after a number of "
+        "minutes or seconds. Convert minutes to seconds. Briefly confirm out "
+        "loud after starting it."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Short label for the timer, like 'pasta' or 'tea'.",
+            },
+            "seconds": {
+                "type": "number",
+                "description": "Duration in seconds (convert any minutes given).",
+            },
+        },
+        "required": ["seconds"],
+    },
+}
+
+TOOL_SET_MODE = {
+    "name": "set_mode",
+    "description": (
+        "Switch the glasses into one of the wearer's installed modes by its id, "
+        "so a single press runs that mode — e.g. 'recipe' or 'pokedex'. Use this "
+        "only when the wearer explicitly asks to turn on or switch to a named "
+        "mode. Pass an empty id to go back to classic reading."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "string",
+                "description": "The mode id to activate, or empty to clear it.",
+            },
+        },
+        "required": ["id"],
+    },
+}
+
+TOOL_GET_BRIEFING = {
+    "name": "get_briefing",
+    "description": (
+        "Read the wearer a short spoken news briefing from their configured "
+        "feeds. Use this when they ask for their news, headlines, or a briefing. "
+        "The briefing is spoken to them directly, so after calling this just "
+        "confirm very briefly and do not repeat the contents."
+    ),
+    "input_schema": {"type": "object", "properties": {}},
+}
+
 
 class BrainOffline(Exception):
     pass
@@ -156,6 +212,8 @@ _online_cache = {"ts": None, "value": False}
 
 
 def is_online(force: bool = False) -> bool:
+    if state.load_config().get("local_only"):
+        return False  # #58: local-only mode keeps everything on-device
     with _online_lock:
         now = time.monotonic()
         if (not force and _online_cache["ts"] is not None

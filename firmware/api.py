@@ -82,6 +82,26 @@ class ActionResultBody(BaseModel):
     result: str = ""
 
 
+class ActiveModeBody(BaseModel):
+    id: Optional[str] = None
+
+
+class PackInstallBody(BaseModel):
+    url: str
+
+
+class FlashcardsGenerateBody(BaseModel):
+    n: int = 20
+
+
+class ReviewBody(BaseModel):
+    grade: int
+
+
+class ListenBody(BaseModel):
+    max_s: float = 15.0
+
+
 def _wifi_ssid() -> Optional[str]:
     try:
         out = subprocess.run(
@@ -321,3 +341,169 @@ def complete_action(action_id: int, body: ActionResultBody) -> Dict[str, Any]:
     if not state.get_actions().complete(action_id, body.status, body.result):
         raise HTTPException(status_code=404, detail="unknown action id")
     return {"ok": True}
+
+
+# --- v3: mode-pack platform ------------------------------------------------
+# Sibling modules (packs, flashcards) are imported lazily inside each handler so
+# this file stays importable before they land and on machines that lack their
+# heavier deps (same pattern as /memory/search). Filesystem- and DB-backed state
+# (packs on disk, flashcards in history.db) is visible across the api and main
+# processes; anything owned by the mic/camera, the in-RAM event ring, or the
+# in-RAM timer registry lives in the main process and is reached over UDS.
+
+
+@app.get("/modes")
+def get_modes() -> Dict[str, Any]:
+    import packs  # lazy: modes-as-data pack loader
+    return {
+        "modes": packs.load_modes(),
+        "active_mode": state.load_config().get("active_mode"),
+    }
+
+
+@app.post("/modes/active")
+def set_active_mode(body: ActiveModeBody) -> Dict[str, Any]:
+    mode_id = body.id
+    if mode_id is not None:
+        import packs
+        if mode_id not in packs.load_modes():
+            raise HTTPException(status_code=422, detail="unknown mode id: " + mode_id)
+    cfg = state.load_config()
+    cfg["active_mode"] = mode_id
+    state.save_config(cfg)
+    return {"ok": True, "active_mode": mode_id}
+
+
+@app.get("/packs")
+def get_packs() -> Dict[str, Any]:
+    import packs
+    return {"packs": packs.list_packs()}
+
+
+@app.post("/packs/install")
+def install_pack(body: PackInstallBody) -> Dict[str, Any]:
+    url = body.url.strip()
+    if not url:
+        raise HTTPException(status_code=422, detail="url must not be empty")
+    import packs
+    try:
+        mode_ids = packs.install_pack(url)
+    except Exception as exc:  # fetch/parse/validate failure on a user-supplied url
+        raise HTTPException(status_code=400, detail="pack install failed: " + str(exc))
+    return {"ok": True, "modes": mode_ids}
+
+
+@app.delete("/packs/{name}")
+def delete_pack(name: str) -> Dict[str, Any]:
+    import packs
+    if not packs.remove_pack(name):
+        raise HTTPException(status_code=404, detail="unknown pack or pack is builtin")
+    return {"ok": True}
+
+
+def _sse_pack(ev: Any) -> bytes:
+    lines = []
+    if isinstance(ev, dict):
+        kind = ev.get("kind")
+        if kind:
+            lines.append("event: " + str(kind))
+        seq = ev.get("seq")
+        if seq is not None:
+            lines.append("id: " + str(seq))
+    lines.append("data: " + json.dumps(ev))
+    return ("\n".join(lines) + "\n\n").encode("utf-8")
+
+
+@app.get("/events")
+def event_stream() -> StreamingResponse:
+    # Prime outside the generator so a down service yields a real 503 (headers
+    # not yet sent), mirroring /live. Start from the current head so a fresh
+    # connection streams events forward, not the whole ring-buffer backlog.
+    prime = uds_call({"cmd": "events", "since": 0})
+    if not prime.get("ok"):
+        raise HTTPException(status_code=503, detail="events unavailable")
+
+    def stream(cursor: int = int(prime.get("seq") or 0)) -> Iterator[bytes]:
+        last_beat = time.monotonic()
+        while True:
+            now = time.monotonic()
+            if now - last_beat >= 15.0:
+                yield b": keep-alive\n\n"
+                last_beat = now
+            try:
+                resp = uds_call({"cmd": "events", "since": cursor})
+            except HTTPException:
+                return
+            if not resp.get("ok"):
+                return
+            cursor = resp.get("seq", cursor)
+            for ev in resp.get("events") or []:
+                yield _sse_pack(ev)
+            time.sleep(0.5)
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@app.post("/flashcards/generate")
+def flashcards_generate(body: Optional[FlashcardsGenerateBody] = None) -> Dict[str, Any]:
+    n = body.n if body else 20
+    if n < 1 or n > 100:
+        raise HTTPException(status_code=422, detail="n must be between 1 and 100")
+    import brain  # for the offline exception type
+    import flashcards
+    try:
+        cards = flashcards.generate_from_today(n)
+    except brain.BrainOffline:
+        raise HTTPException(
+            status_code=503, detail="flashcard generation needs internet"
+        )
+    return {"cards": cards}
+
+
+@app.get("/flashcards/due")
+def flashcards_due() -> Dict[str, Any]:
+    import flashcards
+    return {"cards": flashcards.due_cards()}
+
+
+@app.post("/flashcards/{card_id}/review")
+def flashcards_review(card_id: int, body: ReviewBody) -> Dict[str, Any]:
+    if body.grade not in (0, 1, 2, 3):
+        raise HTTPException(status_code=422, detail="grade must be 0, 1, 2, or 3")
+    import flashcards
+    updated = flashcards.review(card_id, body.grade)
+    if updated is None or updated is False:
+        raise HTTPException(status_code=404, detail="unknown card id")
+    resp = {"ok": True}  # type: Dict[str, Any]
+    if isinstance(updated, dict):
+        resp["card"] = updated
+    return resp
+
+
+@app.post("/listen")
+def listen(body: Optional[ListenBody] = None) -> Dict[str, Any]:
+    # The api process has no mic; recording + transcription happen in the main
+    # service, reached via the UDS "listen" command (max_s + headroom timeout so
+    # the socket read outlives the recording and whisper transcription).
+    max_s = body.max_s if body else 15.0
+    if max_s <= 0 or max_s > 120:
+        raise HTTPException(status_code=422, detail="max_s must be between 0 and 120")
+    resp = uds_call({"cmd": "listen", "max_s": max_s}, timeout=max_s + 30.0)
+    if not resp.get("ok"):
+        if resp.get("error") == "busy":
+            raise HTTPException(status_code=409, detail="device is busy")
+        raise HTTPException(
+            status_code=500, detail=resp.get("error") or "listen failed"
+        )
+    return {"text": resp.get("text", "")}
+
+
+@app.get("/timers")
+def get_timers() -> Dict[str, Any]:
+    # Timers are in-RAM threading.Timers owned by the main service (they fire
+    # audio.speak + an event there), so the api process must read them over UDS
+    # rather than from its own empty module-level registry.
+    resp = uds_call({"cmd": "timers"})
+    if not resp.get("ok"):
+        raise HTTPException(status_code=503, detail="timers unavailable")
+    return {"timers": resp.get("timers") or []}

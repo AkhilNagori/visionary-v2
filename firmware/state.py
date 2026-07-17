@@ -33,6 +33,11 @@ DEFAULT_CONFIG = {
     "features": {"ask": True, "recorder": True},
     "wake_word": {"enabled": False, "model": "hey_jarvis"},
     "navigation": {"enabled": False, "interval_s": 3.0},
+    "active_mode": None,
+    "captions": {"help_phrase": None, "listen_name": None},
+    "feeds": [],
+    "local_only": False,
+    "emergency_contact": None,
 }
 
 

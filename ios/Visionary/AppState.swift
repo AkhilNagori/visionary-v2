@@ -1,5 +1,25 @@
+import Combine
 import Foundation
 import SwiftUI
+
+// MARK: - v3 navigation
+
+/// Top-level tabs: Home / Library / Live / Modes / Settings.
+enum AppTab: Hashable {
+    case home, library, live, modes, settings
+}
+
+/// Segments inside the Library tab.
+enum LibrarySegment: String, CaseIterable, Identifiable {
+    case history, search, recorder, flashcards, notes
+    var id: String { rawValue }
+}
+
+/// Segments inside the Live tab.
+enum LiveSegment: String, CaseIterable, Identifiable {
+    case live, captions, guide
+    var id: String { rawValue }
+}
 
 @MainActor
 final class AppState: ObservableObject {
@@ -8,14 +28,33 @@ final class AppState: ObservableObject {
     @Published var config: DeviceConfig?
     @Published var lastError: String?
 
+    // v3 navigation: Home's quick actions deep-link into tabs and segments.
+    @Published var selectedTab: AppTab = .home
+    @Published var librarySegment: LibrarySegment = .history
+    @Published var liveSegment: LiveSegment = .live
+
+    // v3 mode packs: the active mode id (nil = classic read) plus id → display
+    // name, both pulled from GET /modes. ModesView updates them optimistically
+    // after POST /modes/active; the slow poll in refresh() catches switches
+    // made by voice on the glasses themselves.
+    @Published var activeMode: String?
+    @Published var modeNames: [String: String] = [:]
+
+    // Pending actions the phone can't auto-execute (send_text / email_draft /
+    // note) — mirrored from ActionRunner for the Home badge and inbox banner.
+    @Published var inboxCount: Int = 0
+
     private(set) var client: APIClient?
     private var refreshTask: Task<Void, Never>?
     private var actionRunner: ActionRunner?
+    private var inboxCountSub: AnyCancellable?
     private var isActive = true  // scenes launch active; onChange only fires on transitions
+    private var modesTick = 0
 
     private static let urlKey = "device_url"
     private static let tokenKey = "device_token"
     private static let refreshInterval: UInt64 = 5_000_000_000  // ns
+    private static let modesEveryNthRefresh = 6  // ≈ every 30s
 
     init() {
         let defaults = UserDefaults.standard
@@ -46,6 +85,10 @@ final class AppState: ObservableObject {
             paired = true
             actionRunner?.stop()
             actionRunner = nil   // old runner holds the old client
+            inboxCountSub = nil
+            inboxCount = 0
+            activeMode = nil
+            modeNames = [:]
             reconcileActionRunner()
             return true
         } catch {
@@ -57,6 +100,7 @@ final class AppState: ObservableObject {
     /// Starts (or restarts) the background status+config refresh loop.
     func connect() {
         refreshTask?.cancel()
+        modesTick = 0   // re-pull /modes promptly after launch or foregrounding
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
@@ -66,7 +110,7 @@ final class AppState: ObservableObject {
         reconcileActionRunner()
     }
 
-    /// One refresh pass: pulls /status and /config in parallel.
+    /// One refresh pass: /status and /config in parallel, plus /modes when stale.
     func refresh() async {
         guard let client = client else { return }
         do {
@@ -79,6 +123,28 @@ final class AppState: ObservableObject {
             // keep the last known status/config; surface why the refresh failed
             lastError = error.localizedDescription
         }
+        if modesTick == 0 { await refreshModes() }
+        modesTick = (modesTick + 1) % Self.modesEveryNthRefresh
+    }
+
+    /// One /modes pass. Best-effort: the Home card keeps its last known value
+    /// when the call fails. Public so ModesView can re-sync after activating a
+    /// mode or installing a pack.
+    func refreshModes() async {
+        guard let client = client,
+              let result = try? await client.modes() else { return }
+        activeMode = result.activeMode
+        modeNames = Dictionary(result.modes.map { ($0.id, $0.name) },
+                               uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Human-readable name for a mode id; nil is the classic read pipeline.
+    /// Falls back to prettifying the id ("explain_10" → "Explain 10") until
+    /// /modes has loaded.
+    func modeDisplayName(_ id: String?) -> String {
+        guard let id = id, !id.isEmpty else { return "Classic Read" }
+        if let name = modeNames[id] { return name }
+        return id.split(separator: "_").map(\.capitalized).joined(separator: " ")
     }
 
     func forget() {
@@ -86,6 +152,7 @@ final class AppState: ObservableObject {
         refreshTask = nil
         actionRunner?.stop()
         actionRunner = nil
+        inboxCountSub = nil
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: Self.urlKey)
         defaults.removeObject(forKey: Self.tokenKey)
@@ -94,6 +161,12 @@ final class AppState: ObservableObject {
         config = nil
         lastError = nil
         paired = false
+        selectedTab = .home
+        librarySegment = .history
+        liveSegment = .live
+        activeMode = nil
+        modeNames = [:]
+        inboxCount = 0
     }
 
     /// Pauses polling (refresh + action runner) when the app leaves the
@@ -115,7 +188,12 @@ final class AppState: ObservableObject {
             return
         }
         if actionRunner == nil {
-            actionRunner = ActionRunner(client: client)
+            let runner = ActionRunner(client: client)
+            actionRunner = runner
+            // Mirror the badge count; the runner republishes after every poll
+            // and whenever ActionsInboxView posts .visionaryActionsDidChange.
+            inboxCountSub = runner.$pendingInboxCount
+                .sink { [weak self] count in self?.inboxCount = count }
         }
         actionRunner?.start()
     }

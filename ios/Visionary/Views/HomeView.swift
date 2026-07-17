@@ -3,6 +3,7 @@ import UIKit
 
 enum Haptics {
     static func tap() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+    static func selection() { UISelectionFeedbackGenerator().selectionChanged() }
     static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
     static func error() { UINotificationFeedbackGenerator().notificationOccurred(.error) }
 }
@@ -28,9 +29,8 @@ struct HomeView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     @State private var inFlightMode: String?
-    @State private var speakText = ""
-    @State private var isSpeaking = false
     @State private var actionError: String?
+    @State private var showInbox = false
 
     private static let uptimeFormatter: DateComponentsFormatter = {
         let f = DateComponentsFormatter()
@@ -45,19 +45,37 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     statusCard
+                    if appState.inboxCount > 0 {
+                        inboxBanner
+                    }
+                    currentModeCard
                     actionButtons
-                    speakCard
+                    quickActions
                 }
                 .padding()
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Visionary")
-            .refreshable { await appState.refresh() }
-            .scrollDismissesKeyboard(.interactively)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) { inboxButton }
+            }
+            .refreshable {
+                await appState.refresh()
+                await appState.refreshModes()
+            }
+            // Re-pull /modes on every visit: a mode activated in the Modes tab
+            // (or by voice on the glasses) shows on the card without waiting
+            // for the slow poll.
+            .onAppear {
+                Task { await appState.refreshModes() }
+            }
             .alert("Couldn't complete that", isPresented: errorBinding) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(actionError ?? "")
+            }
+            .sheet(isPresented: $showInbox) {
+                ActionsInboxView()
             }
         }
     }
@@ -66,7 +84,7 @@ struct HomeView: View {
         Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })
     }
 
-    // MARK: - Status card
+    // MARK: - Hero status card
 
     @ViewBuilder
     private var statusCard: some View {
@@ -160,6 +178,110 @@ struct HomeView: View {
             .background(color.opacity(0.12), in: Capsule())
     }
 
+    // MARK: - Actions inbox (badge + banner)
+
+    private var inboxButton: some View {
+        Button {
+            Haptics.tap()
+            showInbox = true
+        } label: {
+            Image(systemName: appState.inboxCount > 0 ? "tray.full" : "tray")
+                .overlay(alignment: .topTrailing) {
+                    if appState.inboxCount > 0 {
+                        Text("\(min(appState.inboxCount, 99))")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.red, in: Capsule())
+                            .offset(x: 10, y: -8)
+                            .accessibilityHidden(true)
+                    }
+                }
+        }
+        .accessibilityLabel(appState.inboxCount > 0
+            ? "Actions inbox, \(appState.inboxCount) waiting"
+            : "Actions inbox")
+        .accessibilityHint("Texts, emails, and notes the glasses queued for you.")
+    }
+
+    private var inboxBanner: some View {
+        Button {
+            Haptics.tap()
+            showInbox = true
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.red.opacity(0.14))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "tray.full.fill")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.red)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(appState.inboxCount == 1
+                         ? "1 action waiting"
+                         : "\(appState.inboxCount) actions waiting")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primary)
+                    Text("Texts, emails, and notes need your OK before they go out.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.forward")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .cardStyle()
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens the actions inbox.")
+    }
+
+    // MARK: - Current mode
+
+    private var currentModeCard: some View {
+        Button {
+            Haptics.tap()
+            appState.selectedTab = .modes
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.indigo.opacity(0.14))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: appState.activeMode == nil ? "text.viewfinder" : "wand.and.stars")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(Color.indigo)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Current mode")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(appState.modeDisplayName(appState.activeMode))
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Text(appState.activeMode == nil
+                         ? "Single press reads whatever is in view"
+                         : "Single press on the glasses runs this mode")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.forward")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .cardStyle()
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Current mode: \(appState.modeDisplayName(appState.activeMode))")
+        .accessibilityHint("Opens the mode gallery to switch modes.")
+    }
+
     // MARK: - Read / Describe
 
     private var actionButtons: some View {
@@ -196,6 +318,8 @@ struct HomeView: View {
             do {
                 try await client.capture(mode: mode)
                 Haptics.success()
+                // pick up busy/recording chips right away instead of next poll
+                await appState.refresh()
             } catch {
                 Haptics.error()
                 actionError = error.localizedDescription
@@ -206,57 +330,71 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Speak
+    // MARK: - Quick actions
 
-    private var speakCard: some View {
+    private var isRecording: Bool { appState.status?.recording == true }
+
+    private var quickActions: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Speak through the glasses", systemImage: "speaker.wave.2.fill")
+            Text("Quick actions")
                 .font(.headline)
-            Text("Type a sentence and the glasses say it out loud — handy for demos or getting a student's attention.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                TextField("Something to say…", text: $speakText)
-                    .textFieldStyle(.roundedBorder)
-                    .submitLabel(.send)
-                    .onSubmit(sendSpeak)
-                Button(action: sendSpeak) {
-                    if isSpeaking {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.title2)
-                    }
-                }
-                .frame(minWidth: 44, minHeight: 44)
-                .disabled(trimmedSpeakText.isEmpty || isSpeaking || appState.client == nil)
-                .accessibilityLabel("Speak")
-                .accessibilityHint("The glasses say the typed sentence out loud.")
+                .accessibilityAddTraits(.isHeader)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
+                QuickActionTile(
+                    title: isRecording ? "Stop Recording" : "Voice Note",
+                    subtitle: isRecording ? "The glasses are recording" : "Record and summarize",
+                    icon: isRecording ? "stop.circle.fill" : "waveform",
+                    tint: .pink,
+                    inFlight: inFlightMode == "recorder",
+                    disabled: inFlightMode != nil || appState.client == nil
+                ) { trigger("recorder") }
+                    .accessibilityHint(isRecording
+                        ? "Stops the voice recording."
+                        : "Starts a voice recording on the glasses.")
+                QuickActionTile(
+                    title: "Live Captions",
+                    subtitle: "Read speech around you",
+                    icon: "captions.bubble",
+                    tint: .teal
+                ) { open(.live, live: .captions) }
+                    .accessibilityHint("Opens live captions.")
+                QuickActionTile(
+                    title: "Guide",
+                    subtitle: "See and talk them through",
+                    icon: "person.wave.2",
+                    tint: .green
+                ) { open(.live, live: .guide) }
+                    .accessibilityHint("Opens sighted-guide mode.")
+                QuickActionTile(
+                    title: "Search Memory",
+                    subtitle: "Find anything seen",
+                    icon: "sparkle.magnifyingglass",
+                    tint: .orange
+                ) { open(.library, library: .search) }
+                    .accessibilityHint("Opens visual memory search.")
+                QuickActionTile(
+                    title: "Flashcards",
+                    subtitle: "Review today's deck",
+                    icon: "rectangle.on.rectangle.angled",
+                    tint: .purple
+                ) { open(.library, library: .flashcards) }
+                    .accessibilityHint("Opens flashcard review.")
+                QuickActionTile(
+                    title: "Notes",
+                    subtitle: "Captured by voice",
+                    icon: "note.text",
+                    tint: .yellow
+                ) { open(.library, library: .notes) }
+                    .accessibilityHint("Opens notes from the glasses.")
             }
         }
-        .cardStyle()
     }
 
-    private var trimmedSpeakText: String {
-        speakText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func sendSpeak() {
-        let text = trimmedSpeakText
-        guard !text.isEmpty, !isSpeaking, let client = appState.client else { return }
+    private func open(_ tab: AppTab, library: LibrarySegment? = nil, live: LiveSegment? = nil) {
         Haptics.tap()
-        isSpeaking = true
-        Task { @MainActor in
-            do {
-                try await client.speak(text)
-                speakText = ""
-                Haptics.success()
-            } catch {
-                Haptics.error()
-                actionError = error.localizedDescription
-            }
-            isSpeaking = false
-        }
+        if let library = library { appState.librarySegment = library }
+        if let live = live { appState.liveSegment = live }
+        appState.selectedTab = tab
     }
 }
 
@@ -296,5 +434,54 @@ private struct BigActionButton: View {
         .disabled(disabled)
         .opacity(disabled && !inFlight ? 0.5 : 1)
         .accessibilityLabel(inFlight ? "\(title), in progress" : title)
+    }
+}
+
+private struct QuickActionTile: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let tint: Color
+    var inFlight: Bool = false
+    var disabled: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(tint.opacity(0.15))
+                        .frame(width: 36, height: 36)
+                    if inFlight {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(tint)
+                    } else {
+                        Image(systemName: icon)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(tint)
+                    }
+                }
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled && !inFlight ? 0.5 : 1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(inFlight ? "\(title), in progress" : "\(title). \(subtitle)")
+        .accessibilityAddTraits(.isButton)
     }
 }

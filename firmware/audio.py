@@ -35,37 +35,47 @@ def _capture_device() -> str:
 # ---------------- mic ownership ----------------
 # wakeword.py pauses inference while a capture owns the mic. Both Recorder and
 # record_until_silence bracket their real capture with acquire/release; a counter
-# (not a bare bool) keeps ownership correct if two owners ever overlap.
+# (not a bare bool) tracks how many owners are registered.
 #
-# The I2S capture is single-opener (plughw, no dsnoop), so the advisory flag is
-# not enough on its own: a capturer must WAIT for the wake listener to actually
-# close its arecord before opening its own. _listener_holding is the source of
-# truth for "the listener has the mic open"; the check-and-set is done under the
-# lock so a capturer always wins a tie (the listener refuses to open while a
-# capturer is registered).
+# The I2S capture is single-opener (plughw, no dsnoop), so only ONE arecord may
+# be open at a time. Two coordination rules, both under _capture_lock:
+#   1. capturer vs listener: a capturer waits (bounded) for the wake listener to
+#      close its arecord (_listener_holding), and the listener refuses to open
+#      while any capturer is registered — the capturer wins the tie.
+#   2. capturer vs capturer: only one capturer may hold the device open
+#      (_capture_open); a second waits (unbounded — the first will release)
+#      rather than racing a second arecord onto the busy device.
 _capture_lock = threading.Lock()
 _capture_users = 0
+_capture_open = False
 _listener_holding = False
 _listener_released = threading.Condition(_capture_lock)
 
 
 def _acquire_capture() -> None:
-    global _capture_users
+    global _capture_users, _capture_open
     with _capture_lock:
-        _capture_users += 1
+        _capture_users += 1  # register intent: listener stays out, capture_in_use True
+        # Wait (bounded) for the wake listener to release the single-opener mic.
         deadline = time.monotonic() + 1.0
         while _listener_holding:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
             _listener_released.wait(remaining)
+        # Serialize against any other capturer already holding arecord open.
+        while _capture_open:
+            _listener_released.wait()
+        _capture_open = True
 
 
 def _release_capture() -> None:
-    global _capture_users
+    global _capture_users, _capture_open
     with _capture_lock:
         if _capture_users > 0:
             _capture_users -= 1
+        _capture_open = False
+        _listener_released.notify_all()
 
 
 def capture_in_use() -> bool:

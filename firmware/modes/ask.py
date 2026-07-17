@@ -104,10 +104,15 @@ def _answer(wav):
         answer = stream_see(
             jpeg, prompt, timer,
             history_msgs=_history_msgs(),
-            tools=[brain.TOOL_SEARCH_MEMORY, brain.TOOL_PHONE_ACTION],
+            tools=[brain.TOOL_SEARCH_MEMORY, brain.TOOL_PHONE_ACTION,
+                   brain.TOOL_SET_TIMER, brain.TOOL_SET_MODE,
+                   brain.TOOL_GET_BRIEFING],
             tool_handlers={
                 "search_memory": _tool_search_memory,
                 "phone_action": _tool_phone_action,
+                "set_timer": _tool_set_timer,
+                "set_mode": _tool_set_mode,
+                "get_briefing": _tool_get_briefing,
             },
         )
     except brain.BrainOffline:
@@ -178,6 +183,45 @@ def _tool_phone_action(tool_input):
         payload["date"] = date
     state.get_actions().add(action_type, payload)
     return "Queued for your phone."
+
+
+def _tool_set_timer(tool_input):
+    # type: (dict) -> str
+    import timers  # v3 module; ask.py runs in the main process that fires timers
+    name = (tool_input.get("name") or "").strip()
+    try:
+        info = timers.set_timer(name or "Timer", tool_input.get("seconds"))
+    except ValueError as exc:
+        return "I couldn't set that timer: %s." % exc
+    return "Started the %s timer." % info["name"]
+
+
+def _tool_set_mode(tool_input):
+    # type: (dict) -> str
+    import packs
+    mode_id = (tool_input.get("id") or "").strip()
+    cfg = state.load_config()
+    if not mode_id:
+        cfg["active_mode"] = None
+        state.save_config(cfg)
+        return "Back to classic reading."
+    try:
+        mode = packs.load_modes().get(mode_id)
+    except Exception:
+        return "I couldn't load the modes right now."
+    if mode is None:
+        return "I don't have a mode called %s." % mode_id
+    cfg["active_mode"] = mode_id
+    state.save_config(cfg)
+    return "Switched to %s. A single press runs it now." % mode.get("name", mode_id)
+
+
+def _tool_get_briefing(_tool_input):
+    # type: (dict) -> str
+    from modes import briefing
+    briefing.run_briefing()  # speaks the briefing itself
+    return ("The briefing was just read aloud to the wearer. Do not repeat it; "
+            "reply with only a short confirmation.")
 
 
 def _relative_time(ts):

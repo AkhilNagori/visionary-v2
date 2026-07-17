@@ -35,9 +35,12 @@ for _sub in ("firmware", "dashboard"):
         sys.path.insert(0, _p)
 
 # Local (repo) modules whose module-level state depends on VISIONARY_HOME/SIM.
+# `packs` is here because main.py imports it at top level, so it must be re-imported
+# fresh against each test's HOME alongside main (the per-file v3 fixtures also
+# purge it, harmlessly).
 _FIRMWARE_MODULES = frozenset(
     ("state", "audio", "brain", "vision", "metrics", "main", "memory",
-     "wakeword", "api", "app")
+     "wakeword", "api", "app", "packs")
 )
 
 
@@ -145,6 +148,11 @@ class FakeUDS:
         if cmd == "frame":
             return {"ok": True,
                     "jpeg_b64": base64.b64encode(b"\xff\xd8\xff\xe0jpg").decode("ascii")}
+        if cmd == "timers":
+            # main.py owns the in-RAM timer registry; mirror that here so api's
+            # UDS-routed GET /timers can be exercised in-process.
+            import timers
+            return {"ok": True, "timers": timers.list_timers()}
         return {"ok": False, "error": "unknown command"}
 
     def close(self):
