@@ -56,7 +56,7 @@ On the Pi:
 ```
 sudo apt update && sudo apt install -y git
 git clone https://github.com/AkhilNagori/visionary-v2.git
-cd visionary
+cd visionary-v2
 sudo bash firmware/setup.sh --with-whisper --with-wakeword
 ```
 
