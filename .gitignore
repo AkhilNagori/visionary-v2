@@ -4,3 +4,4 @@ __pycache__/
 .demo_home/
 tests/golden/
 .DS_Store
+.env
