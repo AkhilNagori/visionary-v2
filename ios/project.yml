@@ -1,0 +1,33 @@
+name: Visionary
+options:
+  bundleIdPrefix: org.visionary
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+targets:
+  Visionary:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - Visionary
+    info:
+      path: Visionary/Info.plist
+      properties:
+        CFBundleDisplayName: Visionary
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: The camera is used only to scan the pairing QR code shown by your Visionary glasses.
+        NSLocalNetworkUsageDescription: Visionary talks directly to your glasses over the local network. Nothing leaves your devices.
+        NSBonjourServices:
+          - _visionary._tcp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.visionary.ios
+        TARGETED_DEVICE_FAMILY: "1"
