@@ -20,15 +20,6 @@ private enum ReviewGrade: Int, CaseIterable, Identifiable {
         }
     }
 
-    var tint: Color {
-        switch self {
-        case .again: return .red
-        case .hard: return .orange
-        case .good: return .blue
-        case .easy: return .green
-        }
-    }
-
     var hint: String {
         switch self {
         case .again: return "You'll see this card again before the session ends."
@@ -123,17 +114,21 @@ struct FlashcardsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var model = FlashcardsModel()
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.dismiss) private var dismiss
 
     @State private var isFlipped = false
     @State private var isGrading = false
-    @State private var celebrationAppeared = false
 
     var body: some View {
         NavigationStack {
             content
-                .background(Color(.systemGroupedBackground))
+                .background(DS.Palette.canvas)
                 .navigationTitle("Flashcards")
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { dismiss() }
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         generateButton
                     }
@@ -187,7 +182,6 @@ struct FlashcardsView: View {
             centered {
                 EmptyStateView(
                     icon: "wifi.exclamationmark",
-                    tint: DS.Palette.attention,
                     title: "Couldn't load flashcards",
                     message: error,
                     actionTitle: "Try Again"
@@ -207,53 +201,36 @@ struct FlashcardsView: View {
             content()
                 .frame(maxWidth: .infinity)
                 .padding(.top, 80)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, DS.Space.xxl)
         }
         .refreshable { await model.loadDue(client: appState.client) }
     }
 
     private var emptyState: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: DS.Space.m) {
             EmptyStateView(
-                icon: "sparkles.rectangle.stack",
-                tint: DS.Palette.flashcards,
+                icon: "rectangle.on.rectangle.angled",
                 title: "Turn today into a deck",
-                message: "Everything the glasses read today can become question-and-answer cards. Generate a deck now and review it tonight — spaced repetition schedules the rest."
+                message: "Everything the glasses read today can become question-and-answer cards."
             )
             if let notice = model.generateNotice {
                 Label(notice, systemImage: "info.circle")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
             }
-            Button {
-                Haptics.tap()
-                Task { await model.generate(client: appState.client) }
-            } label: {
-                Label("Generate from Today", systemImage: "wand.and.stars")
-                    .font(.headline)
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(model.isGenerating || appState.client == nil)
-            .padding(.top, 4)
+            generateFooterButton
         }
     }
 
     private var celebration: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(Color.green.opacity(0.12))
-                    .frame(width: 120, height: 120)
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.green)
-            }
-            .scaleEffect(celebrationAppeared ? 1 : 0.4)
-            .opacity(celebrationAppeared ? 1 : 0)
+        VStack(spacing: DS.Space.m) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 34, weight: .regular))
+                .foregroundStyle(DS.Palette.online)
+                .accessibilityHidden(true)
             Text("All caught up")
-                .font(.title2.bold())
+                .font(DS.Text.cardTitle)
             Text(model.reviewedCount == 1
                  ? "You reviewed 1 card. It'll come back when it's due."
                  : "You reviewed \(model.reviewedCount) cards. They'll come back when they're due.")
@@ -263,28 +240,26 @@ struct FlashcardsView: View {
             if let notice = model.generateNotice {
                 Label(notice, systemImage: "info.circle")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
             }
-            Button {
-                Haptics.tap()
-                Task { await model.generate(client: appState.client) }
-            } label: {
-                Label("Generate from Today", systemImage: "wand.and.stars")
-                    .font(.headline)
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(model.isGenerating || appState.client == nil)
-            .padding(.top, 4)
+            generateFooterButton
         }
-        .onAppear {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
-                celebrationAppeared = true
-            }
-        }
-        .onDisappear { celebrationAppeared = false }
         .accessibilityElement(children: .combine)
+    }
+
+    private var generateFooterButton: some View {
+        Button {
+            Haptics.tap()
+            Task { await model.generate(client: appState.client) }
+        } label: {
+            Label("Generate from Today", systemImage: "wand.and.stars")
+                .font(DS.Text.subhead.weight(.semibold))
+                .frame(minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .disabled(model.isGenerating || appState.client == nil)
+        .padding(.top, DS.Space.xs)
     }
 
     // MARK: Review
@@ -306,16 +281,18 @@ struct FlashcardsView: View {
             }
         }
         .padding()
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: model.queue.first?.id)
+        .animation(DS.Motion.spring, value: model.queue.first?.id)
     }
 
     private var header: some View {
         HStack {
             Label(model.queue.count == 1 ? "1 to go" : "\(model.queue.count) to go",
                   systemImage: "rectangle.stack")
+                .monospacedDigit()
             Spacer()
             if model.reviewedCount > 0 {
                 Text("\(model.reviewedCount) reviewed")
+                    .monospacedDigit()
             }
         }
         .font(.subheadline.weight(.medium))
@@ -325,10 +302,10 @@ struct FlashcardsView: View {
 
     private func cardView(_ card: Flashcard) -> some View {
         ZStack {
-            face(tag: "Question", text: card.question, tint: .blue, flipHint: "Tap to reveal")
+            face(tag: "Question", text: card.question, flipHint: "Tap to reveal")
                 .opacity(isFlipped ? 0 : 1)
                 .rotation3DEffect(.degrees(isFlipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
-            face(tag: "Answer", text: card.answer, tint: .green, flipHint: nil)
+            face(tag: "Answer", text: card.answer, flipHint: nil)
                 .opacity(isFlipped ? 1 : 0)
                 .rotation3DEffect(.degrees(isFlipped ? 0 : -180), axis: (x: 0, y: 1, z: 0))
         }
@@ -343,19 +320,19 @@ struct FlashcardsView: View {
         .accessibilityAction { flip() }
     }
 
-    private func face(tag: String, text: String, tint: Color, flipHint: String?) -> some View {
-        VStack(spacing: 14) {
+    private func face(tag: String, text: String, flipHint: String?) -> some View {
+        VStack(spacing: DS.Space.m) {
             Text(tag)
-                .font(.caption.weight(.bold))
-                .tracking(1.5)
+                .font(.caption.weight(.semibold))
+                .tracking(0.8)
                 .textCase(.uppercase)
-                .foregroundStyle(tint)
+                .foregroundStyle(DS.Palette.accent)
             ScrollView(showsIndicators: false) {
                 Text(text)
                     .font(.title3.weight(.medium))
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, DS.Space.xs)
             }
             if let flipHint = flipHint {
                 Label(flipHint, systemImage: "hand.tap")
@@ -363,12 +340,11 @@ struct FlashcardsView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(DS.Space.l + DS.Space.xs)
+        .padding(DS.Space.l)
         .frame(maxWidth: .infinity, minHeight: 320)
         .background(
-            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .fill(DS.Palette.card)
-                .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+            DS.Palette.card,
+            in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
         )
     }
 
@@ -384,22 +360,24 @@ struct FlashcardsView: View {
         .accessibilityHint("Flips the card to its answer side.")
     }
 
+    /// One accent: "Good" (the default) is the filled button; the rest are
+    /// quiet fills, with "Again" carrying the destructive voice.
     private func gradeBar(_ card: Flashcard) -> some View {
         let layout = typeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(spacing: 10))
-            : AnyLayout(HStackLayout(spacing: 10))
+            ? AnyLayout(VStackLayout(spacing: DS.Space.s))
+            : AnyLayout(HStackLayout(spacing: DS.Space.s))
         return layout {
             ForEach(ReviewGrade.allCases) { g in
                 Button {
                     grade(g, for: card)
                 } label: {
                     Text(g.label)
-                        .font(.headline)
-                        .foregroundStyle(.white)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(gradeForeground(g))
                         .frame(maxWidth: .infinity, minHeight: 52)
                         .background(
-                            RoundedRectangle(cornerRadius: DS.Radius.control, style: .continuous)
-                                .fill(g.tint.gradient)
+                            gradeBackground(g),
+                            in: RoundedRectangle(cornerRadius: DS.Radius.control, style: .continuous)
                         )
                 }
                 .buttonStyle(.pressable)
@@ -410,9 +388,21 @@ struct FlashcardsView: View {
         .opacity(isGrading ? 0.6 : 1)
     }
 
+    private func gradeForeground(_ g: ReviewGrade) -> Color {
+        switch g {
+        case .good: return .white
+        case .again: return DS.Palette.danger
+        default: return .primary
+        }
+    }
+
+    private func gradeBackground(_ g: ReviewGrade) -> Color {
+        g == .good ? DS.Palette.accent : DS.Palette.fill
+    }
+
     private func flip() {
         Haptics.tap()
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+        withAnimation(DS.Motion.spring) {
             isFlipped.toggle()
         }
     }

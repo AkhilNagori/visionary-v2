@@ -1,9 +1,9 @@
 import SwiftUI
 import UIKit
 
-// The Visionary design language. Every screen draws from these tokens and
-// components — no view defines its own radius, spacing, palette, or state
-// treatment. One voice.
+// The Visionary design language. One brand accent, semantic status colors, a
+// neutral ramp, and a single elevation style. Feature identity comes from
+// SF Symbols and typography, never from per-feature tints.
 
 // MARK: - Tokens
 
@@ -21,53 +21,44 @@ enum DS {
 
     /// One corner-radius language. Always used with `.continuous`.
     enum Radius {
-        static let chip: CGFloat = 8
         static let control: CGFloat = 12
         static let card: CGFloat = 20
-        static let hero: CGFloat = 28
     }
 
-    /// Physical motion: springs for things that move, ease for things that fade.
+    /// Physical motion: springs for things that move, ease for things that
+    /// fade. Nothing bouncy — transitions should feel inevitable.
     enum Motion {
-        static let spring = Animation.spring(response: 0.35, dampingFraction: 0.8)
-        static let snappy = Animation.spring(response: 0.28, dampingFraction: 0.85)
-        static let bouncy = Animation.spring(response: 0.5, dampingFraction: 0.65)
+        static let spring = Animation.spring(response: 0.35, dampingFraction: 0.85)
+        static let snappy = Animation.spring(response: 0.28, dampingFraction: 0.9)
         static let gentle = Animation.easeOut(duration: 0.25)
     }
 
     /// Semantic colors. Backgrounds ride UIKit dynamic colors so dark mode is
-    /// automatic; feature tints are one hue per job, used identically everywhere.
+    /// automatic. `accent` is the one brand color; green/orange/red are status.
     enum Palette {
         static let canvas = Color(.systemGroupedBackground)
         static let card = Color(.secondarySystemGroupedBackground)
         static let fill = Color(.tertiarySystemFill)
 
+        static let accent = Color(UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.33, green: 0.57, blue: 1.00, alpha: 1.0)
+                : UIColor(red: 0.00, green: 0.35, blue: 0.87, alpha: 1.0)
+        })
+
         static let online = Color.green
         static let attention = Color.orange
         static let danger = Color.red
-
-        static let read = Color.blue
-        static let describe = Color.purple
-        static let record = Color.pink
-        static let captions = Color.teal
-        static let guide = Color.green
-        static let memory = Color.orange
-        static let flashcards = Color.purple
-        static let notes = Color.orange
-        static let modes = Color.indigo
     }
 
-    /// Type scale: rounded display faces for brand moments, system text styles
-    /// underneath so Dynamic Type scales everything.
+    /// Type scale on system text styles so Dynamic Type scales everything.
     enum Text {
-        static let hero = Font.system(.largeTitle, design: .rounded).weight(.bold)
-        static let title = Font.system(.title2, design: .rounded).weight(.bold)
-        static let stateTitle = Font.system(.title3, design: .rounded).weight(.bold)
+        static let hero = Font.largeTitle.weight(.bold)
+        static let title = Font.title2.weight(.bold)
         static let cardTitle = Font.headline
         static let body = Font.body
         static let subhead = Font.subheadline
         static let caption = Font.caption
-        static let badge = Font.caption2.weight(.bold)
     }
 }
 
@@ -102,24 +93,44 @@ extension View {
     }
 }
 
+// MARK: - Section header
+
+/// The one section-label voice: quiet uppercase caption, used for on-page
+/// sections and labeled blocks inside detail screens.
+struct SectionHeader: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .tracking(0.8)
+            .textCase(.uppercase)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
 // MARK: - Icon tile
 
-/// The app's one icon container: a continuous rounded square, soft tint by
-/// default, gradient-filled when prominent. Radius scales with size so every
-/// tile shares the same geometry.
+/// The app's one icon container: a continuous rounded square, soft accent
+/// tint by default, solid accent when prominent. Radius scales with size so
+/// every tile shares the same geometry.
 struct IconTile: View {
     let icon: String
-    let tint: Color
+    var tint: Color = DS.Palette.accent
     var size: CGFloat = 40
     var prominent: Bool = false
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
-                .fill(prominent ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(tint.opacity(0.14)))
+                .fill(prominent ? AnyShapeStyle(tint) : AnyShapeStyle(tint.opacity(0.12)))
                 .frame(width: size, height: size)
             Image(systemName: icon)
-                .font(.system(size: size * 0.42, weight: .semibold))
+                .font(.system(size: size * 0.42, weight: .medium))
                 .foregroundStyle(prominent ? Color.white : tint)
         }
         .accessibilityHidden(true)
@@ -130,7 +141,7 @@ struct IconTile: View {
 
 struct DSBadge: View {
     let text: String
-    let tint: Color
+    var tint: Color = DS.Palette.accent
     var icon: String? = nil
     var filled: Bool = false
 
@@ -138,17 +149,17 @@ struct DSBadge: View {
         HStack(spacing: DS.Space.xs) {
             if let icon = icon {
                 Image(systemName: icon)
-                    .font(.caption2.weight(.bold))
+                    .font(.caption2.weight(.semibold))
             }
             Text(text)
-                .font(DS.Text.badge)
+                .font(.caption2.weight(.semibold))
                 .tracking(0.6)
         }
         .textCase(.uppercase)
         .foregroundStyle(filled ? Color.white : tint)
         .padding(.horizontal, DS.Space.s)
         .padding(.vertical, DS.Space.xs)
-        .background(filled ? AnyShapeStyle(tint) : AnyShapeStyle(tint.opacity(0.14)), in: Capsule())
+        .background(filled ? AnyShapeStyle(tint) : AnyShapeStyle(tint.opacity(0.12)), in: Capsule())
     }
 }
 
@@ -188,10 +199,10 @@ struct StatusDot: View {
 
 // MARK: - Pressable button style
 
-/// Buttons compress slightly under the finger and spring back — the whole app
+/// Buttons compress slightly under the finger and settle back — the whole app
 /// shares this one press physics.
 struct PressableButtonStyle: ButtonStyle {
-    var scale: CGFloat = 0.96
+    var scale: CGFloat = 0.97
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -223,34 +234,24 @@ struct LoadingStateView: View {
     }
 }
 
-/// Empty and error states share one designed moment: a tinted glyph that
-/// springs in, a rounded title, a helpful line, and an optional action.
+/// Empty and error states share one quiet moment: a single symbol, a title,
+/// one line of context, and an optional action. No illustration, no pop.
 struct EmptyStateView: View {
     let icon: String
-    var tint: Color = .accentColor
     let title: String
     let message: String
     var actionTitle: String? = nil
     var action: (() -> Void)? = nil
 
-    @State private var appeared = false
-
     var body: some View {
-        VStack(spacing: DS.Space.l) {
-            ZStack {
-                Circle()
-                    .fill(tint.opacity(0.12))
-                    .frame(width: 96, height: 96)
-                Image(systemName: icon)
-                    .font(.system(size: 40, weight: .medium))
-                    .foregroundStyle(tint)
-            }
-            .scaleEffect(appeared ? 1 : 0.6)
-            .opacity(appeared ? 1 : 0)
-            .accessibilityHidden(true)
-            VStack(spacing: DS.Space.s) {
+        VStack(spacing: DS.Space.m) {
+            Image(systemName: icon)
+                .font(.system(size: 34, weight: .regular))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+            VStack(spacing: DS.Space.xs) {
                 Text(title)
-                    .font(DS.Text.stateTitle)
+                    .font(DS.Text.cardTitle)
                     .multilineTextAlignment(.center)
                 Text(message)
                     .font(DS.Text.subhead)
@@ -263,17 +264,15 @@ struct EmptyStateView: View {
                     action()
                 } label: {
                     Text(actionTitle)
-                        .font(.headline)
+                        .font(DS.Text.subhead.weight(.semibold))
                         .padding(.horizontal, DS.Space.s)
                         .frame(minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
+                .padding(.top, DS.Space.xs)
             }
         }
         .frame(maxWidth: .infinity)
-        .onAppear {
-            withAnimation(DS.Motion.bouncy) { appeared = true }
-        }
     }
 }
 
@@ -311,73 +310,5 @@ extension View {
     /// VoiceOver, floats up from the bottom, and dismisses after 3 seconds.
     func dsToast(_ toast: Binding<String?>) -> some View {
         modifier(ToastModifier(toast: toast))
-    }
-}
-
-// MARK: - Segment picker
-
-/// The app's segmented control: a sliding pill that follows the selection with
-/// matched geometry. Falls back to a menu at accessibility type sizes, where
-/// several segments can't render legibly. Shared by the Library and Live tabs.
-struct SegmentPicker<Option: Hashable>: View {
-    let title: String
-    let options: [Option]
-    let label: (Option) -> String
-    @Binding var selection: Option
-
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @Namespace private var namespace
-
-    var body: some View {
-        if typeSize.isAccessibilitySize {
-            Picker(title, selection: $selection) {
-                ForEach(options, id: \.self) { option in
-                    Text(label(option)).tag(option)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .onChange(of: selection) { _ in Haptics.selection() }
-        } else {
-            HStack(spacing: DS.Space.xs) {
-                ForEach(options, id: \.self) { option in
-                    segment(option)
-                }
-            }
-            .padding(DS.Space.xs)
-            .background(
-                DS.Palette.fill,
-                in: RoundedRectangle(cornerRadius: DS.Radius.control, style: .continuous)
-            )
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(title)
-        }
-    }
-
-    private func segment(_ option: Option) -> some View {
-        let selected = option == selection
-        return Button {
-            guard !selected else { return }
-            Haptics.selection()
-            withAnimation(DS.Motion.snappy) { selection = option }
-        } label: {
-            Text(label(option))
-                .font(.subheadline.weight(selected ? .semibold : .regular))
-                .foregroundColor(selected ? .primary : .secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity, minHeight: 34)
-                .background {
-                    if selected {
-                        RoundedRectangle(cornerRadius: DS.Radius.control - DS.Space.xs,
-                                         style: .continuous)
-                            .fill(DS.Palette.card)
-                            .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
-                            .matchedGeometryEffect(id: "segment-pill", in: namespace)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : [.isButton])
     }
 }

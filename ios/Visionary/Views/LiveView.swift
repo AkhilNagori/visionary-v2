@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LiveView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     @State private var streamID = UUID()
 
     var body: some View {
@@ -9,7 +10,7 @@ struct LiveView: View {
             Group {
                 if let client = appState.client {
                     ScrollView {
-                        VStack(spacing: 16) {
+                        VStack(spacing: DS.Space.l) {
                             // .id ties the stream's lifetime to the Restart button:
                             // a new UUID recreates MJPEGView, whose onAppear reconnects
                             MJPEGView(request: client.liveRequest())
@@ -28,7 +29,11 @@ struct LiveView: View {
                 }
             }
             .navigationTitle("Live View")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         Haptics.tap()
@@ -44,9 +49,8 @@ struct LiveView: View {
     }
 
     private var hintCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("Aiming and focus", systemImage: "camera.viewfinder")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: DS.Space.m) {
+            SectionHeader("Aiming and focus")
             hintRow(icon: "ruler",
                     text: "Hold reading material 25–35 cm from the glasses — about a forearm's length.")
             hintRow(icon: "camera.metering.center.weighted",
@@ -63,7 +67,7 @@ struct LiveView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
                 .font(.subheadline)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(DS.Palette.accent)
                 .frame(width: 22)
             Text(text)
                 .font(.subheadline)
@@ -84,7 +88,7 @@ struct LiveView: View {
         EmptyStateView(
             icon: "video.slash",
             title: "No glasses connected",
-            message: "Pair with your Visionary glasses to see their live camera preview."
+            message: "Pair with your glasses to see their live camera preview."
         )
         .padding(.horizontal, DS.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -9,6 +9,7 @@ struct VisionaryApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
+                .tint(DS.Palette.accent)
                 .onChange(of: scenePhase) { phase in
                     appState.handleScenePhase(phase)
                 }
@@ -58,24 +59,19 @@ struct RootView: View {
         }
     }
 
-    // v3 tab structure: Home / Library / Live / Modes / Settings.
+    // Three tabs. The device is the hero: live surfaces, the mode picker, and
+    // the inbox all launch from Home.
     private var mainTabs: some View {
         TabView(selection: $appState.selectedTab) {
             HomeView()
-                .tabItem { Label("Home", systemImage: "house.fill") }
+                .tabItem { Label("Home", systemImage: "eyeglasses") }
                 .badge(appState.inboxCount)
                 .tag(AppTab.home)
-            LibraryView()
-                .tabItem { Label("Library", systemImage: "books.vertical.fill") }
-                .tag(AppTab.library)
-            LiveTabView()
-                .tabItem { Label("Live", systemImage: "video.fill") }
-                .tag(AppTab.live)
-            ModesView()
-                .tabItem { Label("Modes", systemImage: "square.grid.2x2.fill") }
-                .tag(AppTab.modes)
+            ActivityView()
+                .tabItem { Label("Activity", systemImage: "clock") }
+                .tag(AppTab.activity)
             SettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+                .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(AppTab.settings)
         }
         .onAppear { appState.connect() }
@@ -114,7 +110,7 @@ private struct PairSuccessSplash: View {
         }
         .onAppear {
             Haptics.success()
-            withAnimation(DS.Motion.bouncy) { appeared = true }
+            withAnimation(DS.Motion.spring) { appeared = true }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Connected. Your glasses are ready.")

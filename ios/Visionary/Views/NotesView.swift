@@ -115,6 +115,7 @@ final class NotesStore: ObservableObject {
 
 struct NotesView: View {
     @ObservedObject private var store = NotesStore.shared
+    @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
     @State private var selectedNote: Note?
 
@@ -136,8 +137,14 @@ struct NotesView: View {
                     notesList
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(DS.Palette.canvas)
             .navigationTitle("Notes")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
             .sheet(item: $selectedNote) { note in
                 NoteDetailView(note: note)
             }
@@ -149,9 +156,8 @@ struct NotesView: View {
             VStack(spacing: DS.Space.m) {
                 EmptyStateView(
                     icon: "note.text",
-                    tint: DS.Palette.notes,
                     title: "No notes yet",
-                    message: "Say \u{201C}take a note\u{201D} to the glasses — it lands in the Actions inbox, and saving it from there puts it here. Notes stay on this phone."
+                    message: "Say \u{201C}take a note\u{201D} to the glasses, then save it from the Actions inbox."
                 )
                 if let error = store.storeError {
                     Label(error, systemImage: "exclamationmark.triangle")
@@ -172,7 +178,7 @@ struct NotesView: View {
                 Section {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(DS.Palette.attention)
                 }
             }
             Section {
@@ -259,10 +265,8 @@ private struct NoteDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     header
                     if !note.body.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Note", systemImage: "note.text")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: DS.Space.s) {
+                            SectionHeader("Note")
                             Text(note.body)
                                 .font(.body)
                                 .textSelection(.enabled)
@@ -272,7 +276,7 @@ private struct NoteDetailView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .background(DS.Palette.canvas)
             .navigationTitle(note.displayTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -309,7 +313,7 @@ private struct NoteDetailView: View {
 
     private var header: some View {
         HStack(spacing: DS.Space.m) {
-            IconTile(icon: "note.text", tint: DS.Palette.notes, size: 44)
+            IconTile(icon: "note.text", size: 44)
             VStack(alignment: .leading, spacing: 2) {
                 Text(note.displayTitle)
                     .font(.headline)

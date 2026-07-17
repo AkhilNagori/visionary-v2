@@ -2,23 +2,12 @@ import Combine
 import Foundation
 import SwiftUI
 
-// MARK: - v3 navigation
+// MARK: - Navigation
 
-/// Top-level tabs: Home / Library / Live / Modes / Settings.
+/// Top-level tabs: Home / Activity / Settings. The device is the hero — live
+/// surfaces and the mode picker launch from Home, not from tabs of their own.
 enum AppTab: Hashable {
-    case home, library, live, modes, settings
-}
-
-/// Segments inside the Library tab.
-enum LibrarySegment: String, CaseIterable, Identifiable {
-    case history, search, recorder, flashcards, notes
-    var id: String { rawValue }
-}
-
-/// Segments inside the Live tab.
-enum LiveSegment: String, CaseIterable, Identifiable {
-    case live, captions, guide
-    var id: String { rawValue }
+    case home, activity, settings
 }
 
 @MainActor
@@ -28,15 +17,12 @@ final class AppState: ObservableObject {
     @Published var config: DeviceConfig?
     @Published var lastError: String?
 
-    // v3 navigation: Home's quick actions deep-link into tabs and segments.
     @Published var selectedTab: AppTab = .home
-    @Published var librarySegment: LibrarySegment = .history
-    @Published var liveSegment: LiveSegment = .live
 
     // v3 mode packs: the active mode id (nil = classic read) plus id → display
-    // name, both pulled from GET /modes. ModesView updates them optimistically
-    // after POST /modes/active; the slow poll in refresh() catches switches
-    // made by voice on the glasses themselves.
+    // name, both pulled from GET /modes. The mode picker updates them
+    // optimistically after POST /modes/active; the slow poll in refresh()
+    // catches switches made by voice on the glasses themselves.
     @Published var activeMode: String?
     @Published var modeNames: [String: String] = [:]
 
@@ -162,8 +148,6 @@ final class AppState: ObservableObject {
         lastError = nil
         paired = false
         selectedTab = .home
-        librarySegment = .history
-        liveSegment = .live
         activeMode = nil
         modeNames = [:]
         inboxCount = 0

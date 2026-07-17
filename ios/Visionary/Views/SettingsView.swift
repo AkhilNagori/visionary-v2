@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import AVFoundation
+import VisionKit
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
@@ -104,7 +106,6 @@ struct SettingsView: View {
     private func loadFailedState(_ error: String) -> some View {
         EmptyStateView(
             icon: "wifi.exclamationmark",
-            tint: DS.Palette.attention,
             title: "Couldn't load settings",
             message: error,
             actionTitle: "Try Again"
@@ -125,10 +126,27 @@ struct SettingsView: View {
             twoWaySection(cfg)
             wakeWordSection(cfg)
             navigationSection(cfg)
+            packsSection
             wifiSection
             maintenanceSection
         }
         .scrollDismissesKeyboard(.interactively)
+    }
+
+    private var packsSection: some View {
+        Section {
+            NavigationLink {
+                PacksView()
+            } label: {
+                Label("Mode Packs", systemImage: "shippingbox")
+            }
+            .disabled(appState.client == nil)
+            .accessibilityHint("Install new mode packs or remove ones you added.")
+        } header: {
+            Text("Modes")
+        } footer: {
+            Text("A pack is a shareable set of modes — just prompts, no code. Activate modes from the Home tab.")
+        }
     }
 
     private func voiceSection(_ cfg: Binding<DeviceConfig>) -> some View {
@@ -409,5 +427,347 @@ struct SettingsView: View {
 
     private func intervalLabel(_ interval: Double) -> String {
         interval.formatted(.number.precision(.fractionLength(0...1)))
+    }
+}
+
+// MARK: - Mode packs
+
+/// Pack management, pushed from Settings: install by URL or QR, review what's
+/// installed, remove community packs. Modes themselves activate from Home.
+private struct PacksView: View {
+    @EnvironmentObject private var appState: AppState
+    @StateObject private var model = ModesModel()
+
+    @State private var urlText = ""
+    @State private var showScanner = false
+    @State private var cameraMessage: String?
+    @State private var packError: String?
+    @State private var packToRemove: Pack?
+    @State private var showRemoveConfirm = false
+    @State private var toast: String?
+
+    var body: some View {
+        List {
+            installSection
+            packsSection
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Mode Packs")
+        .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
+        .sheet(isPresented: $showScanner) {
+            PackScannerSheet { code in handleScanned(code) }
+        }
+        .alert("Couldn't manage packs", isPresented: packErrorBinding) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(packError ?? "")
+        }
+        .alert("Camera Unavailable", isPresented: cameraMessageBinding) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(cameraMessage ?? "")
+        }
+        .confirmationDialog("Remove \u{201C}\(packToRemove?.name ?? "")\u{201D}?",
+                            isPresented: $showRemoveConfirm, titleVisibility: .visible) {
+            Button("Remove Pack", role: .destructive) {
+                if let pack = packToRemove { remove(pack) }
+            }
+            Button("Cancel", role: .cancel) { packToRemove = nil }
+        } message: {
+            Text("Its modes disappear from the glasses. You can reinstall the pack any time.")
+        }
+        .dsToast($toast)
+        .task {
+            if model.packs == nil {
+                await model.load(client: appState.client)
+            }
+        }
+    }
+
+    private var packErrorBinding: Binding<Bool> {
+        Binding(get: { packError != nil }, set: { if !$0 { packError = nil } })
+    }
+
+    private var cameraMessageBinding: Binding<Bool> {
+        Binding(get: { cameraMessage != nil }, set: { if !$0 { cameraMessage = nil } })
+    }
+
+    // MARK: Install
+
+    private var installSection: some View {
+        Section {
+            TextField("Pack URL (https://…/pack.json)", text: $urlText)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.go)
+                .onSubmit(installFromField)
+                .accessibilityHint("A web link to a pack's JSON file.")
+            HStack(spacing: DS.Space.s) {
+                Button(action: installFromField) {
+                    Group {
+                        if model.isInstalling {
+                            ProgressView()
+                        } else {
+                            Text("Install")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 32)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(trimmedURL.isEmpty || model.isInstalling || appState.client == nil)
+                Button(action: openScanner) {
+                    Label("Scan QR", systemImage: "qrcode.viewfinder")
+                        .frame(minHeight: 32)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.isInstalling || appState.client == nil)
+                .accessibilityHint("Opens the camera to scan a pack's QR code.")
+            }
+        } header: {
+            Text("Install a Pack")
+        } footer: {
+            Text("Scan a pack QR or paste a link, and its modes install instantly.")
+        }
+    }
+
+    private var trimmedURL: String {
+        urlText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func installFromField() {
+        install(url: trimmedURL)
+    }
+
+    private func install(url: String) {
+        guard !url.isEmpty, let client = appState.client, !model.isInstalling else { return }
+        Haptics.tap()
+        Task { @MainActor in
+            do {
+                let count = try await model.install(url: url, client: client)
+                urlText = ""
+                Haptics.success()
+                toast = count == 1 ? "Installed 1 new mode" : "Installed \(count) new modes"
+            } catch {
+                Haptics.error()
+                packError = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: Scanner
+
+    private func openScanner() {
+        guard DataScannerViewController.isSupported else {
+            cameraMessage = "This device can't scan QR codes. Paste the pack's URL instead."
+            return
+        }
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            presentScannerIfAvailable()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        presentScannerIfAvailable()
+                    } else {
+                        cameraMessage = "Camera access was declined. Paste the pack's URL instead, or allow the camera in Settings."
+                    }
+                }
+            }
+        default:
+            cameraMessage = "Camera access is off. Allow it in Settings, or paste the pack's URL instead."
+        }
+    }
+
+    private func presentScannerIfAvailable() {
+        if DataScannerViewController.isAvailable {
+            showScanner = true
+        } else {
+            cameraMessage = "The camera isn't available right now. Paste the pack's URL instead."
+        }
+    }
+
+    /// Pack QR codes carry either a bare URL or JSON {"url": "..."}.
+    private func handleScanned(_ code: String) {
+        struct PackQR: Decodable { let url: String }
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        var packURL: String?
+        if trimmed.hasPrefix("{"),
+           let decoded = try? JSONDecoder().decode(PackQR.self, from: Data(trimmed.utf8)) {
+            packURL = decoded.url
+        } else if let url = URL(string: trimmed),
+                  url.scheme == "http" || url.scheme == "https" {
+            packURL = trimmed
+        }
+        if let packURL = packURL {
+            install(url: packURL)
+        } else {
+            Haptics.error()
+            packError = "That QR code doesn't contain a pack link."
+        }
+    }
+
+    // MARK: Installed packs
+
+    private var packsSection: some View {
+        Section {
+            if let packs = model.packs, !packs.isEmpty {
+                ForEach(packs) { pack in
+                    packRow(pack)
+                }
+            } else if model.packs != nil {
+                Text("No packs yet — even the built-in modes should appear here once the glasses respond.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: DS.Space.s) {
+                    ProgressView()
+                    Text("Loading packs…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("Installed")
+        } footer: {
+            Text("The built-in pack ships with the glasses and can't be removed.")
+        }
+    }
+
+    private func packRow(_ pack: Pack) -> some View {
+        HStack(spacing: DS.Space.m) {
+            IconTile(icon: "shippingbox")
+            VStack(alignment: .leading, spacing: 3) {
+                Text(pack.name)
+                    .font(.body)
+                Text(pack.modes.count == 1 ? "1 mode" : "\(pack.modes.count) modes")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Spacer()
+            if model.removingPackName == pack.name {
+                ProgressView()
+            } else if pack.builtin {
+                DSBadge(text: "Built-in", tint: .secondary)
+            }
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(pack.builtin ? "" : "Swipe up or down for the remove action.")
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if !pack.builtin {
+                Button(role: .destructive) {
+                    packToRemove = pack
+                    showRemoveConfirm = true
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                }
+            }
+        }
+        .contextMenu {
+            if !pack.builtin {
+                Button(role: .destructive) {
+                    packToRemove = pack
+                    showRemoveConfirm = true
+                } label: {
+                    Label("Remove Pack", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    private func remove(_ pack: Pack) {
+        guard let client = appState.client else { return }
+        Haptics.tap()
+        Task { @MainActor in
+            do {
+                try await model.remove(pack, client: client)
+                await appState.refreshModes()
+                Haptics.success()
+                toast = "Removed \u{201C}\(pack.name)\u{201D}"
+            } catch {
+                Haptics.error()
+                packError = error.localizedDescription
+            }
+            packToRemove = nil
+        }
+    }
+}
+
+// MARK: - Pack QR scanner
+
+private struct PackScannerSheet: View {
+    let onFound: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var found = false
+
+    var body: some View {
+        NavigationStack {
+            PackQRScanner { code in
+                guard !found else { return }
+                found = true
+                Haptics.tap()
+                dismiss()
+                onFound(code)
+            }
+            .ignoresSafeArea()
+            .overlay(alignment: .bottom) {
+                Text("Point the camera at a mode-pack QR code.")
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, DS.Space.l)
+                    .padding(.vertical, 10)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.bottom, DS.Space.xl)
+            }
+            .navigationTitle("Scan Pack Code")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private struct PackQRScanner: UIViewControllerRepresentable {
+    let onScan: (String) -> Void
+
+    func makeUIViewController(context: Context) -> DataScannerViewController {
+        let scanner = DataScannerViewController(
+            recognizedDataTypes: [.barcode(symbologies: [.qr])],
+            qualityLevel: .balanced,
+            isHighlightingEnabled: true
+        )
+        scanner.delegate = context.coordinator
+        return scanner
+    }
+
+    func updateUIViewController(_ controller: DataScannerViewController, context: Context) {
+        if !controller.isScanning {
+            try? controller.startScanning()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(onScan: onScan) }
+
+    final class Coordinator: NSObject, DataScannerViewControllerDelegate {
+        let onScan: (String) -> Void
+        init(onScan: @escaping (String) -> Void) { self.onScan = onScan }
+
+        func dataScanner(_ dataScanner: DataScannerViewController,
+                         didAdd addedItems: [RecognizedItem],
+                         allItems: [RecognizedItem]) {
+            for item in addedItems {
+                if case .barcode(let barcode) = item, let value = barcode.payloadStringValue {
+                    onScan(value)
+                    return
+                }
+            }
+        }
     }
 }

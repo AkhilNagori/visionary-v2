@@ -114,7 +114,7 @@ struct PairingView: View {
             codePromptDevice = device
         } label: {
             HStack(spacing: DS.Space.l) {
-                IconTile(icon: "eyeglasses", tint: .accentColor, size: 52, prominent: true)
+                IconTile(icon: "eyeglasses", size: 52, prominent: true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(device.name)
                         .font(DS.Text.cardTitle)
@@ -129,7 +129,7 @@ struct PairingView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, DS.Space.l)
                     .padding(.vertical, DS.Space.s)
-                    .background(Color.accentColor, in: Capsule())
+                    .background(DS.Palette.accent, in: Capsule())
             }
             .cardStyle()
         }
@@ -144,7 +144,7 @@ struct PairingView: View {
     private var scanCard: some View {
         Button(action: openScanner) {
             HStack(spacing: DS.Space.l) {
-                IconTile(icon: "qrcode.viewfinder", tint: DS.Palette.captions, size: 44)
+                IconTile(icon: "qrcode.viewfinder", size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Scan Pairing Code")
                         .font(DS.Text.cardTitle)
@@ -321,7 +321,7 @@ private struct CodeEntrySheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: DS.Space.xl) {
-                    IconTile(icon: "eyeglasses", tint: .accentColor, size: 64, prominent: true)
+                    IconTile(icon: "eyeglasses", size: 64, prominent: true)
                     VStack(spacing: DS.Space.s) {
                         Text(device.name)
                             .font(DS.Text.title)
@@ -333,7 +333,7 @@ private struct CodeEntrySheet: View {
                     }
                     TextField("6-digit code", text: $code)
                         .keyboardType(.numberPad)
-                        .font(Font.system(.title, design: .rounded).weight(.semibold).monospacedDigit())
+                        .font(Font.title.weight(.semibold).monospacedDigit())
                         .multilineTextAlignment(.center)
                         .padding(.vertical, DS.Space.m)
                         .background(
@@ -482,7 +482,7 @@ private struct RadarView: View {
             if searching {
                 ForEach(0..<3, id: \.self) { ring in
                     Circle()
-                        .stroke(Color.accentColor.opacity(0.3), lineWidth: 1.5)
+                        .stroke(DS.Palette.accent.opacity(0.3), lineWidth: 1.5)
                         .frame(width: 110, height: 110)
                         .scaleEffect(pulse ? 2.1 : 0.85)
                         .opacity(pulse ? 0 : 0.9)
@@ -494,7 +494,7 @@ private struct RadarView: View {
                         )
                 }
             }
-            IconTile(icon: "eyeglasses", tint: .accentColor, size: 96)
+            IconTile(icon: "eyeglasses", size: 96)
         }
         .frame(height: 190)
         .onAppear { pulse = true }

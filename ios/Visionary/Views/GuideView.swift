@@ -14,6 +14,7 @@ struct GuideView: View {
     }
 
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
 
     @State private var streamID = UUID()
     @State private var message = ""
@@ -44,10 +45,13 @@ struct GuideView: View {
                     unpairedState
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(DS.Palette.canvas)
             .navigationTitle("Guide")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         Haptics.tap()
@@ -122,9 +126,9 @@ struct GuideView: View {
 
     private var framingCard: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "eye.fill")
+            Image(systemName: "eye")
                 .font(.subheadline)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(DS.Palette.accent)
                 .frame(width: 22)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
@@ -152,10 +156,8 @@ struct GuideView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background(
-                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                            .fill(exchange.role == .guide
-                                  ? AnyShapeStyle(Color.accentColor.gradient)
-                                  : AnyShapeStyle(DS.Palette.card))
+                        exchange.role == .guide ? DS.Palette.accent : DS.Palette.card,
+                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     )
                     .transition(.scale(scale: 0.9, anchor: exchange.role == .guide ? .bottomTrailing : .bottomLeading)
                         .combined(with: .opacity))
@@ -191,11 +193,10 @@ struct GuideView: View {
                     } label: {
                         Text(phrase)
                             .font(.subheadline.weight(.medium))
+                            .foregroundColor(.primary)
                             .padding(.horizontal, 14)
                             .frame(minHeight: 44)
-                            .background(
-                                Capsule().strokeBorder(Color.accentColor.opacity(0.4))
-                            )
+                            .background(DS.Palette.card, in: Capsule())
                     }
                     .buttonStyle(.pressable)
                     .disabled(isSending || appState.client == nil)
@@ -304,9 +305,8 @@ struct GuideView: View {
     private var unpairedState: some View {
         EmptyStateView(
             icon: "eye.slash",
-            tint: DS.Palette.guide,
             title: "No glasses connected",
-            message: "Pair with your Visionary glasses to see what the wearer sees and speak in their ear."
+            message: "Pair with your glasses to see what the wearer sees and speak in their ear."
         )
         .padding(.horizontal, DS.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

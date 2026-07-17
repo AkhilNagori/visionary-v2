@@ -7,19 +7,10 @@ import UIKit
 private enum InboxStyle {
     static func icon(for type: String) -> String {
         switch type {
-        case "send_text": return "message.fill"
-        case "email_draft": return "envelope.fill"
+        case "send_text": return "message"
+        case "email_draft": return "envelope"
         case "note": return "note.text"
         default: return "tray"
-        }
-    }
-
-    static func color(for type: String) -> Color {
-        switch type {
-        case "send_text": return .green
-        case "email_draft": return .blue
-        case "note": return .orange
-        default: return .gray
         }
     }
 
@@ -151,7 +142,7 @@ struct ActionsInboxView: View {
                     actionList
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(DS.Palette.canvas)
             .navigationTitle("Actions")
             .task {
                 if model.needsInitialLoad {
@@ -188,7 +179,6 @@ struct ActionsInboxView: View {
         } else if let error = model.loadError {
             EmptyStateView(
                 icon: "wifi.exclamationmark",
-                tint: DS.Palette.attention,
                 title: "Couldn't load actions",
                 message: error,
                 actionTitle: "Try Again"
@@ -199,7 +189,7 @@ struct ActionsInboxView: View {
             EmptyStateView(
                 icon: "tray",
                 title: "Inbox zero",
-                message: "When you ask the glasses to send a text, draft an email, or take a note, it waits here for your OK."
+                message: "Texts, emails, and notes from the glasses wait here for your OK."
             )
         }
     }
@@ -432,8 +422,7 @@ private struct InboxRow: View {
 
     var body: some View {
         HStack(spacing: DS.Space.m) {
-            IconTile(icon: InboxStyle.icon(for: action.type),
-                     tint: InboxStyle.color(for: action.type))
+            IconTile(icon: InboxStyle.icon(for: action.type))
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.body)
@@ -450,7 +439,7 @@ private struct InboxRow: View {
             Spacer()
             Image(systemName: trailingIcon)
                 .font(.title3)
-                .foregroundStyle(InboxStyle.color(for: action.type))
+                .foregroundStyle(DS.Palette.accent)
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())

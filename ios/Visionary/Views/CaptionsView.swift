@@ -8,6 +8,7 @@ import UIKit
 /// so contrast beats theme-matching here.
 struct CaptionsView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var source = EventSource()
 
     @State private var autoScroll = true
@@ -43,6 +44,9 @@ struct CaptionsView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Toggle(isOn: $autoScroll) {
@@ -98,7 +102,7 @@ struct CaptionsView: View {
             if !autoScroll {
                 Label("Paused", systemImage: "pause.fill")
                     .font(.caption2.weight(.semibold))
-                    .foregroundColor(.yellow)
+                    .foregroundColor(DS.Palette.attention)
                     .accessibilityLabel("Auto-scroll paused")
             }
         }
@@ -111,9 +115,8 @@ struct CaptionsView: View {
 
     private var statusColor: Color {
         switch source.state {
-        case .open: return .green
-        case .connecting: return .yellow
-        case .waitingToRetry: return .orange
+        case .open: return DS.Palette.online
+        case .connecting, .waitingToRetry: return DS.Palette.attention
         case .idle: return .gray
         }
     }
@@ -170,7 +173,7 @@ struct CaptionsView: View {
     private func scanForAlerts(_ events: [DeviceEvent]) {
         for event in events where event.seq > lastScannedSeq {
             if Self.helpKinds.contains(event.kind) || Self.nameKinds.contains(event.kind) {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                withAnimation(DS.Motion.spring) {
                     helpEvent = event
                 }
                 Haptics.error()
@@ -218,8 +221,8 @@ struct CaptionsView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isName ? Color.blue.gradient : Color.red.gradient)
+            isName ? DS.Palette.accent : DS.Palette.danger,
+            in: RoundedRectangle(cornerRadius: DS.Radius.control, style: .continuous)
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 6)

@@ -16,7 +16,6 @@ struct OnboardingView: View {
 
     private struct Page {
         let icon: String
-        let tint: Color
         let title: String
         let message: String
         let rows: [PageRow]
@@ -24,12 +23,10 @@ struct OnboardingView: View {
 
     private static let pages: [Page] = [
         Page(icon: "eyeglasses",
-             tint: .blue,
              title: "Glasses that talk",
              message: "Visionary reads any text, describes any scene, and answers questions about whatever you're looking at — out loud, hands-free. Modes turn it into a tour guide, recipe copilot, translator, and more.",
              rows: []),
         Page(icon: "hand.tap",
-             tint: .purple,
              title: "One button does everything",
              message: "No screen on your face. The temple button speaks the world:",
              rows: [
@@ -39,7 +36,6 @@ struct OnboardingView: View {
                 PageRow(icon: "hand.raised", text: "Hold, ask a question, let go"),
              ]),
         Page(icon: "qrcode.viewfinder",
-             tint: .teal,
              title: "Pairing takes seconds",
              message: "The app talks to the glasses directly over your Wi-Fi — no account, no sign-up.",
              rows: [
@@ -48,7 +44,6 @@ struct OnboardingView: View {
                 PageRow(icon: "wifi", text: "Keep phone and glasses on the same network"),
              ]),
         Page(icon: "lock.shield",
-             tint: .green,
              title: "Private by design",
              message: "A camera on your face has to earn trust.",
              rows: [
@@ -104,7 +99,6 @@ struct OnboardingView: View {
                     .frame(maxWidth: .infinity, minHeight: 50)
             }
             .buttonStyle(.borderedProminent)
-            .tint(Self.pages[page].tint)
             .padding(.horizontal, 24)
             .padding(.bottom, 16)
             .accessibilityHint(isLastPage ? "Finishes the introduction." : "Shows the next page.")
@@ -117,14 +111,11 @@ struct OnboardingView: View {
             VStack(spacing: 20) {
                 ZStack {
                     Circle()
-                        .fill(
-                            LinearGradient(colors: [p.tint.opacity(0.25), p.tint.opacity(0.08)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
+                        .fill(DS.Palette.accent.opacity(0.12))
                         .frame(width: 140, height: 140)
                     Image(systemName: p.icon)
                         .font(.system(size: 56, weight: .medium))
-                        .foregroundStyle(p.tint)
+                        .foregroundStyle(DS.Palette.accent)
                 }
                 .padding(.top, 24)
                 .accessibilityHidden(true)
@@ -145,7 +136,7 @@ struct OnboardingView: View {
                             HStack(alignment: .top, spacing: 12) {
                                 Image(systemName: row.icon)
                                     .font(.body.weight(.medium))
-                                    .foregroundStyle(p.tint)
+                                    .foregroundStyle(DS.Palette.accent)
                                     .frame(width: 26)
                                 Text(row.text)
                                     .font(.subheadline)
@@ -165,11 +156,11 @@ struct OnboardingView: View {
         HStack(spacing: 8) {
             ForEach(Self.pages.indices, id: \.self) { index in
                 Capsule()
-                    .fill(index == page ? Self.pages[page].tint : Color(.systemFill))
+                    .fill(index == page ? DS.Palette.accent : Color(.systemFill))
                     .frame(width: index == page ? 22 : 8, height: 8)
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: page)
+        .animation(DS.Motion.snappy, value: page)
         .accessibilityElement()
         .accessibilityLabel("Page \(page + 1) of \(Self.pages.count)")
     }

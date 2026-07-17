@@ -2,55 +2,6 @@ import SwiftUI
 import AVFoundation
 import Combine
 
-// MARK: - Recordings list model
-
-@MainActor
-final class RecordingsModel: ObservableObject {
-    @Published private(set) var recordings: [HistoryEntry] = []
-    @Published private(set) var isLoading = false
-    @Published var loadError: String?
-
-    private var nextPage = 1
-    private var total = Int.max
-    private var fetched = 0
-
-    var hasMore: Bool { fetched < total }
-
-    func reload(client: APIClient?) async {
-        nextPage = 1
-        total = Int.max
-        fetched = 0
-        recordings = []
-        await loadMore(client: client)
-    }
-
-    /// Recordings are sparse in the history stream, so each batch scans up to
-    /// five pages until it turns up new entries or runs out.
-    func loadMore(client: APIClient?) async {
-        guard let client = client, !isLoading, hasMore else { return }
-        isLoading = true
-        loadError = nil
-        var pagesScanned = 0
-        var foundThisBatch = 0
-        do {
-            while hasMore && pagesScanned < 5 && foundThisBatch < 10 {
-                let page = try await client.history(page: nextPage)
-                nextPage += 1
-                pagesScanned += 1
-                fetched += page.entries.count
-                total = page.entries.isEmpty ? fetched : page.total
-                let known = Set(recordings.map(\.id))
-                let found = page.entries.filter { $0.kind == "recording" && !known.contains($0.id) }
-                foundThisBatch += found.count
-                recordings.append(contentsOf: found)
-            }
-        } catch {
-            if !Task.isCancelled { loadError = error.localizedDescription }
-        }
-        isLoading = false
-    }
-}
-
 // MARK: - Audio playback
 
 /// Not actor-isolated: every callback is delivered on the main queue and all
@@ -159,157 +110,11 @@ final class RecordingPlayer: ObservableObject {
     }
 }
 
-// MARK: - Recorder tab
-
-struct RecorderView: View {
-    @EnvironmentObject private var appState: AppState
-    @StateObject private var model = RecordingsModel()
-    @State private var selectedEntry: HistoryEntry?
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if model.recordings.isEmpty {
-                    ScrollView {
-                        stateView
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 100)
-                            .padding(.horizontal, 32)
-                    }
-                    .refreshable { await model.reload(client: appState.client) }
-                } else {
-                    recordingList
-                }
-            }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Recorder")
-            .sheet(item: $selectedEntry) { entry in
-                RecordingDetailView(entry: entry)
-            }
-            .task {
-                if model.recordings.isEmpty {
-                    await model.reload(client: appState.client)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var stateView: some View {
-        if model.isLoading {
-            LoadingStateView(label: "Loading recordings…")
-        } else if let error = model.loadError {
-            EmptyStateView(
-                icon: "wifi.exclamationmark",
-                tint: DS.Palette.attention,
-                title: "Couldn't load recordings",
-                message: error,
-                actionTitle: "Try Again"
-            ) {
-                Task { await model.reload(client: appState.client) }
-            }
-        } else if model.hasMore {
-            EmptyStateView(
-                icon: "waveform.badge.magnifyingglass",
-                tint: DS.Palette.record,
-                title: "No recordings yet",
-                message: "None in recent activity — there may be older ones.",
-                actionTitle: "Scan Older History"
-            ) {
-                Task { await model.loadMore(client: appState.client) }
-            }
-        } else {
-            EmptyStateView(
-                icon: "waveform",
-                tint: DS.Palette.record,
-                title: "No recordings yet",
-                message: "Triple-press the button on the glasses to record a lecture or conversation. The transcript and an AI summary land here."
-            )
-        }
-    }
-
-    private var recordingList: some View {
-        List {
-            ForEach(model.recordings) { entry in
-                Button {
-                    selectedEntry = entry
-                } label: {
-                    RecordingRow(entry: entry)
-                }
-                .onAppear {
-                    if entry.id == model.recordings.last?.id {
-                        Task { await model.loadMore(client: appState.client) }
-                    }
-                }
-            }
-            if model.hasMore {
-                Button {
-                    Task { await model.loadMore(client: appState.client) }
-                } label: {
-                    HStack {
-                        Spacer()
-                        if model.isLoading {
-                            ProgressView()
-                        } else {
-                            Text("Scan Older History")
-                                .font(.subheadline)
-                        }
-                        Spacer()
-                    }
-                }
-                .listRowBackground(Color.clear)
-            }
-        }
-        .listStyle(.insetGrouped)
-        .refreshable { await model.reload(client: appState.client) }
-    }
-}
-
-private struct RecordingRow: View {
-    let entry: HistoryEntry
-
-    private var title: String {
-        let line = entry.text
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .first
-            .map(String.init) ?? ""
-        return line.isEmpty ? "Recording" : line
-    }
-
-    var body: some View {
-        HStack(spacing: DS.Space.m) {
-            IconTile(icon: "waveform", tint: DS.Palette.record)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.body)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                if let summary = entry.extra?["summary"] {
-                    Text(summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                Text(TimestampFormat.relative(entry.ts))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            Spacer()
-            Image(systemName: entry.hasAudio ? "play.circle" : "chevron.forward")
-                .font(.title3)
-                .foregroundStyle(entry.hasAudio ? DS.Palette.record : Color(.tertiaryLabel))
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Recording, \(TimestampFormat.relative(entry.ts)). \(title)")
-        .accessibilityHint("Opens the transcript, summary, and playback.")
-    }
-}
-
 // MARK: - Recording detail
 
-private struct RecordingDetailView: View {
+/// Transcript, summary, and playback for a `recording` history entry. Opened
+/// from the Activity timeline and Home's recent strip.
+struct RecordingDetailView: View {
     let entry: HistoryEntry
 
     @EnvironmentObject private var appState: AppState
@@ -330,16 +135,16 @@ private struct RecordingDetailView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: DS.Space.xl) {
                     playbackCard
                     if let summary = entry.extra?["summary"] {
-                        block("Summary", summary, icon: "sparkles")
+                        block("Summary", summary)
                     }
-                    block("Transcript", entry.text, icon: "text.alignleft")
+                    block("Transcript", entry.text)
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .background(DS.Palette.canvas)
             .navigationTitle(TimestampFormat.absolute(entry.ts))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -362,16 +167,17 @@ private struct RecordingDetailView: View {
 
     @ViewBuilder
     private var playbackCard: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: DS.Space.m) {
             if !entry.hasAudio {
                 Label("Audio isn't available for this recording", systemImage: "speaker.slash")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else if player.failed {
-                VStack(spacing: 10) {
-                    Label("Couldn't load the audio from the glasses", systemImage: "exclamationmark.triangle")
+                VStack(spacing: DS.Space.s) {
+                    Label("Couldn't load the audio from the glasses",
+                          systemImage: "exclamationmark.triangle")
                         .font(.subheadline)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(DS.Palette.attention)
                     Button("Try Again") {
                         if let client = appState.client {
                             player.load(request: client.audioRequest(id: entry.id))
@@ -386,7 +192,7 @@ private struct RecordingDetailView: View {
                 } label: {
                     Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.system(size: 64))
-                        .foregroundStyle(DS.Palette.record)
+                        .foregroundStyle(DS.Palette.accent)
                         .symbolRenderingMode(.hierarchical)
                 }
                 .buttonStyle(.pressable)
@@ -394,7 +200,7 @@ private struct RecordingDetailView: View {
                 .opacity(player.isReady ? 1 : 0.4)
                 .accessibilityLabel(player.isPlaying ? "Pause" : "Play recording")
 
-                VStack(spacing: 4) {
+                VStack(spacing: DS.Space.xs) {
                     Slider(
                         value: Binding(
                             get: { isScrubbing ? scrubPosition : min(player.progress, max(player.duration, 0.01)) },
@@ -422,7 +228,7 @@ private struct RecordingDetailView: View {
                 }
 
                 if !player.isReady {
-                    HStack(spacing: 8) {
+                    HStack(spacing: DS.Space.s) {
                         ProgressView()
                         Text("Loading audio…")
                             .font(.caption)
@@ -435,11 +241,9 @@ private struct RecordingDetailView: View {
         .cardStyle()
     }
 
-    private func block(_ title: String, _ text: String, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: icon)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+    private func block(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            SectionHeader(title)
             Text(text)
                 .font(.body)
                 .textSelection(.enabled)
