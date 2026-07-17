@@ -40,7 +40,7 @@ for _sub in ("firmware", "dashboard"):
 # purge it, harmlessly).
 _FIRMWARE_MODULES = frozenset(
     ("state", "audio", "brain", "vision", "metrics", "main", "memory",
-     "wakeword", "api", "app", "packs")
+     "api", "app", "packs")
 )
 
 
@@ -62,7 +62,9 @@ def visionary_env(monkeypatch):
     # Tests opt in to keys/fixtures explicitly; never inherit the dev shell's.
     for var in ("OPENAI_API_KEY",
                 "VISIONARY_SIM_IMAGE", "VISIONARY_SIM_WAV",
-                "VISIONARY_MODEL", "VISIONARY_ALSA_CAPTURE"):
+                "VISIONARY_MODEL", "VISIONARY_STT_MODEL",
+                "VISIONARY_TTS_MODEL", "VISIONARY_TTS_VOICE",
+                "VISIONARY_ALSA_CAPTURE"):
         monkeypatch.delenv(var, raising=False)
     _purge_firmware_modules()
     yield home

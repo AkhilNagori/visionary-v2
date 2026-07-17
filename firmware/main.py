@@ -4,8 +4,8 @@ command server, boot sequence, and the Tier 3 background lifecycle.
 
 Hardware mode drives a GPIO button; SIM mode (VISIONARY_SIM=1) drives
 everything from a stdin REPL. A slow config watcher keeps the background
-threads (two-way interpreter, navigation assist, wake-word listener) in
-sync with config.json and opportunistically reindexes visual memory."""
+threads (two-way interpreter and navigation assist) in sync with config.json
+and opportunistically reindexes visual memory."""
 
 import base64
 import json
@@ -25,7 +25,6 @@ import memory
 import packs
 import state
 import vision
-import wakeword
 from modes import ask, describe, navigate, read, recorder, session, translate
 
 SIM = os.environ.get("VISIONARY_SIM") == "1"
@@ -391,33 +390,9 @@ class ActiveModeManager:
                     self._mode_id = None
 
 
-class WakeWordManager:
-    """Reconciles the openWakeWord listener with config wake_word.enabled."""
-
-    def __init__(self, on_wake: Callable[[], None]) -> None:
-        self._on_wake = on_wake
-        self._lock = threading.Lock()
-        self._started = False
-
-    def reconcile(self) -> None:
-        enabled = bool((state.load_config().get("wake_word") or {}).get("enabled"))
-        with self._lock:
-            if enabled and not self._started:
-                self._started = wakeword.start(self._on_wake)
-            elif not enabled and self._started:
-                wakeword.stop()
-                self._started = False
-
-    def stop(self) -> None:
-        with self._lock:
-            if self._started:
-                wakeword.stop()
-                self._started = False
-
-
 class Dispatcher:
     """Routes gestures and UDS captures to mode actions on daemon threads and
-    owns the Tier 3 background lifecycle (loops, wake word, memory reindex)."""
+    owns the Tier 3 background lifecycle (loops and memory reindex)."""
 
     def __init__(self) -> None:
         self.busy = threading.Lock()
@@ -432,7 +407,6 @@ class Dispatcher:
         # every config-reconciled background activity; single-press stops any of
         # them and each is torn down on shutdown
         self._managers = [self._translate, self._navigate, self._active_mode]
-        self._wake = WakeWordManager(self._on_wake)
         self._watch_stop = threading.Event()
         self._watch_thread = None  # type: Optional[threading.Thread]
         self._last_reindex = 0.0
@@ -594,7 +568,6 @@ class Dispatcher:
         every dispatch and by the ~5s watcher."""
         for manager in self._managers:
             manager.reconcile()
-        self._wake.reconcile()
 
     def start_watcher(self) -> None:
         self._watch_thread = threading.Thread(target=self._watch, daemon=True)
@@ -602,7 +575,6 @@ class Dispatcher:
 
     def cleanup(self) -> None:
         self._watch_stop.set()
-        self._wake.stop()
         for manager in self._managers:
             manager.shutdown()
 
@@ -632,18 +604,6 @@ class Dispatcher:
                 self._last_reindex = now
         except Exception:
             pass
-
-    def _on_wake(self) -> None:
-        # busy-respecting wrapper: run the wake-triggered ask only when idle
-        if not self.busy.acquire(False):
-            return
-        try:
-            ask.ask_from_wake()
-        except Exception:
-            audio.beep("err")
-            audio.speak("Something went wrong.")
-        finally:
-            self.busy.release()
 
     # -- v3 mode dispatch -------------------------------------------------
 
@@ -797,9 +757,12 @@ def boot(dispatcher: Dispatcher) -> CommandServer:
     first_boot = not os.path.exists(os.path.join(state.HOME, "token"))
     token = state.get_token()
     if first_boot:
-        # comma-join spells the six digits out one at a time
-        audio.speak("Welcome to Visionary. Your pairing code is %s."
-                    % ", ".join(token), wait=True)
+        if brain.is_online():
+            # comma-join spells the six digits out one at a time
+            audio.speak("Welcome to Visionary. Your pairing code is %s."
+                        % ", ".join(token), wait=True)
+        else:
+            audio.beep("offline")
     try:
         vision.init_camera()
     except Exception:
@@ -810,13 +773,21 @@ def boot(dispatcher: Dispatcher) -> CommandServer:
     server.start()
     dispatcher.reconcile()
     dispatcher.start_watcher()
-    audio.speak("Visionary ready."
-                + ("" if brain.is_online() else " Offline mode."), wait=True)
+    if brain.is_online():
+        audio.speak("Visionary ready.", wait=True)
+    else:
+        audio.beep("offline")
     return server
 
 
 def safe_shutdown() -> None:
-    audio.speak("Shutting down. Goodbye.", wait=True)
+    # Cloud speech must never turn a five-second shutdown gesture into a
+    # 90-second network wait. Queue the farewell, but bound the grace period.
+    if brain.is_online():
+        audio.speak("Shutting down. Goodbye.", wait=False)
+        time.sleep(1.0)
+    else:
+        audio.beep("ok")
     _cleanup()
     if SIM:
         print("[sim] sudo shutdown -h now")

@@ -1,4 +1,4 @@
-"""Camera lifecycle, capture, preview, and OCR preprocessing.
+"""Camera lifecycle, capture, preview, and local capture storage.
 
 The camera is started once at boot and kept running: a cold Picamera2
 start costs ~1.5s of AE/AWB settling, so paying it once at init keeps
@@ -11,7 +11,7 @@ import threading
 import time
 from typing import Tuple
 
-from PIL import Image, ImageOps
+from PIL import Image
 
 import state
 
@@ -59,11 +59,6 @@ def capture_preview_jpeg(size: Tuple[int, int] = (640, 480)) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=70)
     return buf.getvalue()
-
-
-def preprocess_for_ocr(jpeg: bytes) -> Image.Image:
-    img = Image.open(io.BytesIO(jpeg)).convert("L")
-    return ImageOps.autocontrast(img)
 
 
 def save_capture(jpeg: bytes) -> str:

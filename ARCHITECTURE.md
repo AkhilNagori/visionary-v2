@@ -10,12 +10,11 @@ this document must not drift: change the contract first, then the code.
 visionary/
 ├── firmware/              # runs on the Pi Zero 2 W (cwd = this dir)
 │   ├── main.py            # entrypoint: gesture engine, dispatcher, UDS command server, boot
-│   ├── audio.py           # play/beep/speak (Piper), SentenceSpeaker, Recorder, record_until_silence
-│   ├── vision.py          # camera lifecycle, capture, preview, OCR preprocessing
-│   ├── brain.py           # OpenAI vision/chat (streaming + function-calling), Whisper STT, Tesseract OCR, online check, prompts
+│   ├── audio.py           # local ALSA I/O + OpenAI TTS, SentenceSpeaker, Recorder, record_until_silence
+│   ├── vision.py          # camera lifecycle, capture, preview
+│   ├── brain.py           # OpenAI vision/chat (streaming + function-calling), cloud STT, online check, prompts
 │   ├── state.py           # paths, config load/save, SQLite history + phone-action queue, pairing token + QR
 │   ├── memory.py          # Tier 3: visual memory — embeddings + FTS5 search over history
-│   ├── wakeword.py        # Tier 3: openWakeWord listener ("hey vision" trigger)
 │   ├── metrics.py         # per-stage latency logging
 │   ├── api.py             # FastAPI local server :8321 (separate process; talks to main via UDS)
 │   ├── modes/             # read.py, describe.py, ask.py, recorder.py, translate.py, navigate.py (+ __init__.py)
@@ -45,12 +44,15 @@ visionary/
 
 | Var | Meaning | Default |
 |---|---|---|
-| `VISIONARY_HOME` | data dir (config, db, captures, voices, sounds, sock) | `/opt/visionary` |
+| `VISIONARY_HOME` | data dir (config, db, captures, recordings, sounds, sock) | `/opt/visionary` |
 | `VISIONARY_SIM` | `"1"` = simulation mode: no camera/GPIO/ALSA; print instead | unset |
 | `VISIONARY_SIM_IMAGE` | path to JPEG/PNG returned by sim capture | unset (sim generates a text image) |
 | `VISIONARY_SIM_WAV` | path to WAV returned by sim recorder | unset (sim generates 1s silence) |
-| `OPENAI_API_KEY` | OpenAI API (vision, chat, Whisper STT, embeddings) — required | — |
+| `OPENAI_API_KEY` | OpenAI API (vision/chat, STT, TTS, embeddings) — required | — |
 | `VISIONARY_MODEL` | OpenAI model id | `gpt-4o-mini` |
+| `VISIONARY_STT_MODEL` | OpenAI transcription model id | `gpt-4o-mini-transcribe` |
+| `VISIONARY_TTS_MODEL` | OpenAI speech model id | `gpt-4o-mini-tts-2025-12-15` |
+| `VISIONARY_TTS_VOICE` | OpenAI speech voice | `marin` |
 | `VISIONARY_ALSA_CAPTURE` | arecord device | `plughw:0,0` |
 
 SIM mode is decided **once per module import** via
@@ -59,8 +61,7 @@ SIM mode is decided **once per module import** via
 ### Paths (all under `$VISIONARY_HOME`, created by `state.ensure_dirs()`)
 
 `config.json`, `history.db`, `token`, `pairing_qr.png`, `captures/`,
-`recordings/`, `voices/`, `sounds/`, `visionary.sock`, `whisper/` (optional
-whisper.cpp install). Metrics: `/var/log/visionary/metrics.log`, falling back
+`recordings/`, `sounds/`, `visionary.sock`. Metrics: `/var/log/visionary/metrics.log`, falling back
 to `$VISIONARY_HOME/metrics.log` when not writable.
 
 ## firmware/state.py
@@ -112,23 +113,18 @@ text TEXT, extra TEXT, image_path TEXT, audio_path TEXT)` — `extra` stored as 
 
 ```json
 {
-  "voice": "en_US-lessac-low",
+  "voice": "marin",
   "rate": 1.0,
   "language": null,
   "two_way": {"enabled": false, "theirs": "es", "yours": "en"},
   "gestures": {"single": "read", "double": "describe", "triple": "recorder"},
   "features": {"ask": true, "recorder": true},
-  "wake_word": {"enabled": false, "model": "hey_jarvis"},
   "navigation": {"enabled": false, "interval_s": 3.0}
 }
 ```
 
-`wake_word.model` is an openWakeWord pretrained model name; a custom
-"hey vision" model is a documented follow-up (training one is out of scope),
-so the shipped default trigger phrase is "hey Jarvis".
-
 `language` = translation target for reading (`null` = read as-is). `rate` is a
-speech-speed multiplier 0.5–2.0 (maps to piper `--length-scale 1/rate`).
+speech-speed multiplier 0.5–2.0 passed to the OpenAI speech request.
 Modes call `load_config()` at the start of each action, so config changes via
 the API take effect without a restart.
 
@@ -151,13 +147,16 @@ def play(path: str, wait: bool = False) -> None          # aplay; sim: print
 def beep(name: str) -> None
     # name ∈ capture | ok | err | offline | rec_start | rec_stop  (HOME/sounds/<name>.wav)
 def speak(text: str, wait: bool = True) -> None
-    # Piper (voice + rate from load_config(); model HOME/voices/<voice>.onnx,
-    # sample rate read from the voice's .json, default 16000) piped to aplay raw.
-    # Fallback: espeak-ng. Sim: print("[speak] " + text)
+    # POST text to OpenAI /v1/audio/speech using OPENAI_API_KEY,
+    # VISIONARY_TTS_MODEL (default gpt-4o-mini-tts-2025-12-15), and the configured/OpenAI voice + rate;
+    # play the returned WAV through local ALSA. No local speech-engine fallback.
+    # Connection/API errors are logged and trigger the local error beep without
+    # crashing the dispatcher. Sim: print("[speak] " + text)
 
 class SentenceSpeaker:
-    # Streaming TTS: feed() text chunks; speaks each completed sentence (split on .!?\n)
-    # in order via a worker thread + queue, overlapping TTS with model streaming.
+    # Sentence-level cloud TTS: feed() text chunks; requests/speaks each completed
+    # sentence (split on .!?\n) in order via a worker thread + queue, overlapping
+    # speech requests/playback with model streaming.
     def feed(self, chunk: str) -> None
     def close(self) -> None       # flush remainder, block until all speech done
     first_audio_ts: Optional[float]   # monotonic time first sentence started speaking (for metrics)
@@ -174,7 +173,7 @@ def record_until_silence(max_s: float = 15.0, silence_s: float = 1.2) -> Optiona
 
 def capture_in_use() -> bool
     # True while a Recorder or record_until_silence owns the mic (module-level flag,
-    # set/cleared by both). wakeword.py pauses inference while True.
+    # set/cleared by both); used to prevent overlapping recordings.
 ```
 
 ## firmware/vision.py
@@ -183,7 +182,6 @@ def capture_in_use() -> bool
 def init_camera() -> None                 # start Picamera2 once, keep running (capture < 300ms)
 def capture_jpeg() -> bytes               # full-res still (1640x1232); sim: SIM image file or generated text image
 def capture_preview_jpeg(size: Tuple[int, int] = (640, 480)) -> bytes   # for MJPEG /live
-def preprocess_for_ocr(jpeg: bytes) -> "PIL.Image.Image"   # grayscale + autocontrast
 def save_capture(jpeg: bytes) -> str      # write HOME/captures/<ts>.jpg, return path
 ```
 
@@ -216,11 +214,9 @@ TOOL_SEARCH_MEMORY: dict   # OpenAI function schema: search_memory(query: str, k
 TOOL_PHONE_ACTION: dict    # phone_action(type: calendar_event|reminder, title: str, date?: str, notes?: str)
 
 def transcribe(wav_path: str) -> str
-    # online + OPENAI_API_KEY -> OpenAI whisper-1; else whisper.cpp at HOME/whisper/
-    # (binary `main`, model ggml-tiny.en.bin) as a subprocess that exits (RAM budget);
-    # else raise BrainOffline.
-
-def ocr(jpeg: bytes) -> str               # preprocess_for_ocr + pytesseract; RuntimeError if unavailable
+    # POST the deliberately captured WAV to OpenAI /v1/audio/transcriptions using
+    # OPENAI_API_KEY and VISIONARY_STT_MODEL (default gpt-4o-mini-transcribe).
+    # No local STT fallback; unavailable network/key raises BrainOffline.
 
 READ_PROMPT: str; DESCRIBE_PROMPT: str; ASK_SYSTEM: str; SUMMARY_PROMPT: str
 NAVIGATE_PROMPT: str   # short assistive callouts: hazards, signage, doorways; POV framing;
@@ -253,24 +249,6 @@ Modes call `memory.index_entry(...)` right after `history.add(...)` (read,
 describe, ask, recording). If numpy is missing, embedding search degrades to
 FTS5 silently.
 
-## firmware/wakeword.py — Tier 3 wake word
-
-openWakeWord listener (~15% CPU on the Zero 2 W), strictly local processing —
-audio never stored or uploaded; document this in the module docstring.
-
-```python
-def available() -> bool          # openwakeword importable AND a model resolvable
-def start(on_wake: Callable[[], None]) -> bool
-    # spawn daemon listener thread (16k mono mic stream); False if unavailable.
-    # MUST pause inference while other capture is active (checks a shared
-    # audio-in-use flag exposed as audio.capture_in_use() -> bool).
-def stop() -> None
-```
-
-`audio.py` therefore also exposes `capture_in_use() -> bool` (True while a
-Recorder or record_until_silence owns the mic). openwakeword import lives
-inside functions; SIM: `available()` is False.
-
 ## firmware/modes/
 
 Each mode is module-level functions using the singletons above. Every mode:
@@ -280,12 +258,12 @@ and ends every failure path with `beep("err")` + a short spoken sentence.
 ```python
 # read.py
 def run_read() -> None
-    # capture -> save_capture -> online? brain.see(read_prompt(cfg.language), on_text -> SentenceSpeaker)
-    #   BrainOffline/failure -> beep("offline") -> brain.ocr -> speak (or "I couldn't find any text.")
+    # capture -> save_capture -> brain.see(read_prompt(cfg.language), on_text -> SentenceSpeaker)
+    #   BrainOffline/failure -> beep("offline") + log; no on-device OCR/TTS fallback.
     # history kind="read" (extra {"language": lang} when translating)
 
 # describe.py
-def run_describe() -> None    # same shape, DESCRIBE_PROMPT; offline fallback = OCR + explain-scene-needs-internet
+def run_describe() -> None    # same shape, DESCRIBE_PROMPT; connectivity failure = error beep + log
 
 # ask.py  (hold-to-ask; also the voice assistant — photo is always attached)
 def ask_begin() -> None       # beep rec_start, Recorder.start()
@@ -296,10 +274,8 @@ def ask_end() -> None
     # tool_handlers={search_memory -> memory.search formatted as speakable lines,
     #                phone_action -> state.get_actions().add + "Queued for your phone."})
     # -> speak answer; store kind="ask", text=answer, extra={"question": q}.
-    # Offline: transcribe may still work via whisper.cpp; if see() is offline,
-    # fall back to memory.search(question) (FTS5 works offline) and speak the top hit,
-    # else "I need internet to answer questions."
-def ask_from_wake() -> None   # wake-word entry: record_until_silence instead of hold, then same as ask_end
+    # Any OpenAI network/key failure ends with an error beep and a logged message;
+    # there is no local transcription or answer fallback.
 def reset_memory() -> None
 
 # recorder.py  (triple press toggles)
@@ -320,8 +296,9 @@ def run_navigation(stop_event: "threading.Event") -> None
     # not safety guarantees."). Loop every cfg navigation.interval_s:
     # capture_preview_jpeg -> brain.see(NAVIGATE_PROMPT + the previous callout for
     # continuity) -> speak ONLY when the callout is new/changed (model instructed to
-    # return the literal token NONE when nothing worth saying). Offline -> speak
-    # "Navigation assist needs internet." once and exit. Checks stop_event between steps.
+    # return the literal token NONE when nothing worth saying). No connectivity ->
+    # play the local error beep, log "Navigation assist needs internet," and exit.
+    # Checks stop_event between steps.
 ```
 
 ## firmware/main.py
@@ -351,8 +328,7 @@ instead of reading.
 Tier 3 lifecycle (owned by main.py): a slow config watcher (~5s poll, plus a
 check on every dispatch) reconciles background threads with config —
 `two_way.enabled` ↔ translate thread, `navigation.enabled` ↔ navigate thread,
-`wake_word.enabled` ↔ `wakeword.start(on_wake=modes.ask.ask_from_wake)`.
-Also calls `memory.reindex_pending()` when online (at most once a minute).
+and calls `memory.reindex_pending()` when online (at most once a minute).
 
 UDS command server (thread): JSON-lines over `HOME/visionary.sock`.
 Requests/responses (one JSON object per line):
@@ -364,9 +340,10 @@ Requests/responses (one JSON object per line):
 | `{"cmd":"frame"}` | `{"ok":true,"jpeg_b64":"..."}` (640x480 preview) |
 | `{"cmd":"status"}` | `{"ok":true,"online":bool,"busy":bool,"uptime":float,"recording":bool}` |
 
-Boot: `ensure_dirs` → `get_token` (first boot only: speak the 6-digit pairing
-code) → `init_camera` → start UDS server → speak "Visionary ready." (+ " Offline
-mode." when offline). Hardware mode binds gpiozero `Button(17, pull_up=True,
+Boot: `ensure_dirs` → `get_token` → `init_camera` → start UDS server → if OpenAI
+is reachable, speak "Visionary ready" and the first-boot 6-digit pairing code;
+otherwise play the local error beep and log the network/key problem. Hardware
+mode binds gpiozero `Button(17, pull_up=True,
 bounce_time=0.05)` press/release to the engine. SIM mode runs a stdin REPL:
 `1`/`2`/`3` = clicks, `a` = hold start, `r` = hold release, `s` = status, `q` = quit.
 
@@ -404,15 +381,15 @@ Battery is `null` in v1 (no fuel gauge on the PowerBoost Basic) — clients show
   `EnvironmentFile=/etc/visionary.env`, `Restart=on-failure`, `RestartSec=3`.
 - `visionary-api.service`: `uvicorn api:app --host 0.0.0.0 --port 8321`, same cwd/env.
 - `avahi-visionary.service` → `/etc/avahi/services/`: advertises `_visionary._tcp` port 8321.
-- `setup.sh` (idempotent, Bookworm): apt (picamera2, gpiozero, requests, PIL, numpy,
-  tesseract + pytesseract, espeak-ng, alsa-utils, sox, avahi-daemon), pip (piper-tts,
-  fastapi, uvicorn, qrcode) with `--break-system-packages`, I2S overlay
-  (`googlevoicehat-soundcard`, `dtparam=audio=off`), piper voice download, sox-generated
-  beeps (6 sounds), rsync `firmware/` → `/opt/visionary/app/`, `/etc/visionary.env`
-  (OPENAI_API_KEY placeholder, chmod 600), install+enable both
-  services + avahi file. Optional `--with-whisper` flag builds whisper.cpp + tiny.en
-  into `HOME/whisper/`. Optional `--with-wakeword` flag pip-installs openwakeword and
-  pre-downloads its models.
+- `setup.sh` (idempotent, Raspberry Pi OS Trixie 32-bit `armhf` or 64-bit): apt
+  installs the camera/GPIO Python bindings, requests/Pillow/numpy, ALSA utilities,
+  SoX, rsync, and Avahi; pip installs FastAPI, Uvicorn, and QR support. It enables
+  the I2S overlay (`googlevoicehat-soundcard`, `dtparam=audio=off`), generates local
+  event beeps, rsyncs `firmware/` → `/opt/visionary/app/`, creates
+  `/etc/visionary.env` (`OPENAI_API_KEY` placeholder, chmod 600), and installs/enables
+  both services plus Avahi. It installs no Piper, eSpeak, Tesseract, whisper.cpp,
+  or openWakeWord, downloads no local models, and accepts no `--with-whisper` or
+  `--with-wakeword` flags.
 
 ## dashboard/ — Tier 3 classroom fleet dashboard
 
@@ -447,11 +424,10 @@ to 120 chars — summaries, not surveillance. Uses `requests`; no database.
 - `test_audio.py` (SentenceSpeaker splitting/order in sim, Recorder sim path)
 - `test_brain.py` (is_online cache w/ monkeypatched socket; `see()` SSE parsing against
   a fake streamed response; transcribe routing; all network mocked)
-- `test_offline_read.py` (`skipif` tesseract missing: ocr(golden) contains expected text)
 - `test_api.py` (`skipif` fastapi missing: 401 without token, config roundtrip, history,
   capture/speak against a fake UDS server fixture, image 404, /memory/search offline
   FTS5 path, /actions queue lifecycle add→pending→complete→gone)
-- `test_memory.py` (index_entry + FTS5 search with embeddings unavailable (offline),
+- `test_memory.py` (index_entry + FTS5 search with embeddings unavailable,
   cosine ranking with a monkeypatched embed(), reindex_pending)
 - `test_dashboard.py` (`skipif` fastapi missing: /fleet snapshot shape with the device
   poller monkeypatched — no real network)
@@ -467,7 +443,8 @@ iphonesimulator SDK, iOS 16 target).
 XcodeGen `project.yml` (app target `Visionary`; Info.plist keys:
 `NSCameraUsageDescription`, `NSLocalNetworkUsageDescription`,
 `NSBonjourServices` = `["_visionary._tcp"]`, `NSCalendarsUsageDescription`,
-`NSRemindersUsageDescription`). No accounts, no cloud — device-local.
+`NSRemindersUsageDescription`). The app has no account or separate backend; it
+talks to the glasses over the LAN, while the glasses call OpenAI for AI features.
 
 ```
 ios/Visionary/
@@ -475,7 +452,7 @@ ios/Visionary/
 ├── AppState.swift            # @MainActor ObservableObject: pairing persistence (UserDefaults),
 │                             # APIClient?, published DeviceStatus/DeviceConfig, connect()/pair()/forget()
 ├── Models.swift              # Codable, .convertFromSnakeCase: DeviceStatus, DeviceConfig, TwoWayConfig,
-│                             # WakeWordConfig, NavigationConfig, HistoryEntry (extra: [String:String]?),
+│                             # NavigationConfig, HistoryEntry (extra: [String:String]?),
 │                             # HistoryPage, PairingPayload, MemoryHit (entry + score),
 │                             # PhoneAction (id, ts, type, payload [String:String], status)
 ├── APIClient.swift           # async/await URLSession + Bearer token:
@@ -496,8 +473,8 @@ ios/Visionary/
     ├── SearchView.swift      # Tier 3 visual memory: search field -> memorySearch results
     │                         # ("what room number was on that door?"), tap-through to entry detail
     ├── LiveView.swift        # MJPEGView of /live
-    ├── SettingsView.swift    # voice picker, rate slider 0.5–2.0, translation language, two-way toggle,
-    │                         # wake word toggle, navigation assist toggle + interval (with the
+    ├── SettingsView.swift    # OpenAI voice picker, rate slider 0.5–2.0, translation language,
+    │                         # two-way toggle, navigation assist toggle + interval (with the
     │                         # assistive-info-not-safety-device disclaimer), WiFi form (POST /wifi),
     │                         # "Check for updates" (POST /update)
     └── RecorderView.swift    # kind=="recording" entries: transcript + summary, play /history/{id}/audio, share
@@ -510,14 +487,15 @@ until paired. `ios/README.md`: `brew install xcodegen && xcodegen generate`
 ## Cross-cutting invariants
 
 1. Hands-free/eyes-free: no glasses feature depends on a screen.
-2. Offline-degradable: every cloud path has a fallback or graceful spoken failure.
-3. Press-to-capture privacy: nothing captured/uploaded except deliberate triggers;
-   history stays on device. Tier 3 opt-ins keep the spirit: wake-word audio is
-   processed locally and never stored/uploaded; navigation captures are sent to the
-   vision API only while the wearer has navigation explicitly enabled; the classroom
-   dashboard sees text summaries only, never images or audio.
-4. RAM budget (512MB): whisper.cpp and other heavy work run as subprocesses that exit;
-   never simultaneously with a model-heavy step. openWakeWord budget ≤ ~15% CPU.
+2. Cloud-honest: vision/chat, `gpt-4o-mini-transcribe`, `gpt-4o-mini-tts-2025-12-15`, and
+   `text-embedding-3-small` all require internet and the same `OPENAI_API_KEY`.
+   Connection failures produce a local beep and actionable log entry.
+3. Triggered-capture privacy: there is no passive or always-listening capture.
+   Deliberate actions upload the requested image/audio to OpenAI; explicitly started
+   recorder/translation/navigation sessions capture only until stopped. History stays
+   on device, and the classroom dashboard sees text summaries only, never images/audio.
+4. RAM budget (512MB): all model inference runs in OpenAI's cloud; the Pi retains only
+   bounded camera/audio buffers and application state. This supports Trixie `armhf`.
 5. Perceived latency: first spoken sentence starts while the model is still streaming.
 6. Navigation assist is assistive information, not a certified safety device — the
    framing appears in the prompt, the spoken disclaimer, the app, and the docs.
@@ -580,9 +558,7 @@ that mode's pipeline instead. Gestures may also map `"mode:<id>"`.
 - **brain**: new tools TOOL_SET_TIMER, TOOL_SET_MODE (switch active_mode by
   voice), TOOL_GET_BRIEFING — wired into ask.py handlers.
 - **state config additions**: `active_mode`, `captions{}`, `feeds[]`,
-  `local_only: false`, `emergency_contact: null`.
-- **local-only mode (#58)**: `brain.is_online()` returns False when config
-  `local_only` — everything runs on-device, zero cloud.
+  `emergency_contact: null`. There is no local-only inference mode.
 - **Actions**: types add `send_text {to?,body}`, `email_draft {to?,subject,body}`,
   `note {title,body}`. iOS auto-executes ONLY calendar_event/reminder; the rest
   land in an in-app Actions inbox (iOS cannot auto-send messages/mail).

@@ -2,9 +2,79 @@
 the Recorder sim path, and record_until_silence returning a real WAV."""
 
 import os
+import subprocess
 import wave
 
 import pytest
+
+
+def test_speak_uses_openai_tts_and_aplay(load, monkeypatch):
+    audio = load("audio")
+    monkeypatch.setattr(audio, "SIM", False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    request = {}
+    playback = {}
+
+    class Response:
+        status_code = 200
+        content = b"RIFFfake-wav"
+
+    def fake_post(url, **kwargs):
+        request["url"] = url
+        request.update(kwargs)
+        return Response()
+
+    def fake_run(cmd, **kwargs):
+        playback["cmd"] = cmd
+        playback.update(kwargs)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(audio.requests, "post", fake_post)
+    monkeypatch.setattr(audio.subprocess, "run", fake_run)
+    audio.speak("Hello from Visionary.")
+
+    assert request["url"].endswith("/v1/audio/speech")
+    assert request["headers"]["Authorization"] == "Bearer sk-test"
+    assert request["json"] == {
+        "model": "gpt-4o-mini-tts-2025-12-15",
+        "voice": "marin",
+        "input": "Hello from Visionary.",
+        "response_format": "wav",
+        "speed": 1.0,
+    }
+    assert playback["cmd"] == ["aplay", "-q", "-"]
+    assert playback["input"] == Response.content
+
+
+def test_tts_chunks_stay_below_api_limit(load):
+    audio = load("audio")
+    text = ("word " * 2100).strip()
+    chunks = list(audio._tts_chunks(text))
+    assert len(chunks) > 1
+    assert all(0 < len(chunk) <= audio._TTS_MAX_CHARS for chunk in chunks)
+    assert " ".join(chunks) == text
+
+
+def test_speak_api_failure_logs_and_beeps(load, monkeypatch, capsys):
+    audio = load("audio")
+    monkeypatch.setattr(audio, "SIM", False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-bad")
+    beeps = []
+
+    class Response:
+        status_code = 401
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"error": {"message": "invalid key"}}
+
+    monkeypatch.setattr(audio.requests, "post", lambda *a, **k: Response())
+    monkeypatch.setattr(audio, "beep", beeps.append)
+    audio.speak("This will fail safely.")
+
+    assert beeps == ["err"]
+    assert "invalid key" in capsys.readouterr().err
 
 
 def test_sentence_speaker_splits_in_order(load, monkeypatch):
@@ -86,3 +156,22 @@ def test_record_until_silence_uses_sim_wav_fixture(load, monkeypatch, tmp_path):
 def test_capture_in_use_false_at_rest(load):
     audio = load("audio")
     assert audio.capture_in_use() is False
+
+
+def test_recorder_releases_mic_after_arecord_stops(load, monkeypatch, tmp_path):
+    audio = load("audio")
+    monkeypatch.setattr(audio, "SIM", False)
+    order = []
+    raw = tmp_path / "capture.raw"
+    raw.write_bytes(b"raw")
+
+    rec = audio.Recorder()
+    rec.recording = True
+    rec._proc = object()
+    rec._raw_path = str(raw)
+    monkeypatch.setattr(audio, "_stop_proc", lambda proc: order.append("stopped"))
+    monkeypatch.setattr(audio, "_release_capture", lambda: order.append("released"))
+    monkeypatch.setattr(audio, "_convert_raw", lambda src, dst: True)
+
+    rec.stop()
+    assert order == ["stopped", "released"]

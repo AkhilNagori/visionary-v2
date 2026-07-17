@@ -5,7 +5,7 @@ that surface, nothing more: grab a still, say something, hear a reply. Everythin
 else (a mode, a party trick, a copilot) is those three composed with a prompt.
 
     capture() -> bytes     # a JPEG of whatever you're facing
-    speak(text)            # say it out loud (Piper TTS)
+    speak(text)            # say it out loud (OpenAI TTS)
     listen(max_s=15) -> str # record until you stop talking, transcribed to text
 
 Example — a three-line "what am I looking at?" hack::

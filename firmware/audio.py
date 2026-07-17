@@ -1,6 +1,5 @@
-"""Audio out (Piper TTS via aplay, beeps) and audio in (ALSA capture)."""
+"""Audio out (OpenAI TTS + ALSA), beeps, and ALSA microphone capture."""
 
-import json
 import os
 import queue
 import re
@@ -13,6 +12,8 @@ import time
 import wave
 from typing import Optional
 
+import requests
+
 import state
 
 SIM = os.environ.get("VISIONARY_SIM") == "1"
@@ -22,6 +23,17 @@ CAPTURE_CHANNELS = 2
 CAPTURE_WIDTH = 4  # bytes/sample, S32_LE
 TARGET_RATE = 16000
 SILENCE_THRESHOLD = 0.01  # RMS as fraction of full scale (~-40 dBFS)
+
+_TTS_URL = "https://api.openai.com/v1/audio/speech"
+_TTS_MODEL = "gpt-4o-mini-tts-2025-12-15"
+_TTS_VOICE = "marin"
+# Stay below both the endpoint's 4096-character cap and the model's 2000-token
+# input window, including for languages that tokenize more densely than English.
+_TTS_MAX_CHARS = 1800
+_OPENAI_VOICES = frozenset((
+    "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx",
+    "sage", "shimmer", "verse", "marin", "cedar",
+))
 
 _FRAME_BYTES = CAPTURE_CHANNELS * CAPTURE_WIDTH
 _SENTENCE = re.compile(r"[^.!?\n]*[.!?\n]")
@@ -33,39 +45,21 @@ def _capture_device() -> str:
 
 
 # ---------------- mic ownership ----------------
-# wakeword.py pauses inference while a capture owns the mic. Both Recorder and
-# record_until_silence bracket their real capture with acquire/release; a counter
-# (not a bare bool) tracks how many owners are registered.
-#
-# The I2S capture is single-opener (plughw, no dsnoop), so only ONE arecord may
-# be open at a time. Two coordination rules, both under _capture_lock:
-#   1. capturer vs listener: a capturer waits (bounded) for the wake listener to
-#      close its arecord (_listener_holding), and the listener refuses to open
-#      while any capturer is registered — the capturer wins the tie.
-#   2. capturer vs capturer: only one capturer may hold the device open
-#      (_capture_open); a second waits (unbounded — the first will release)
-#      rather than racing a second arecord onto the busy device.
+# The I2S capture device is single-opener (plughw, no dsnoop), so Recorder and
+# short utterance capture serialize their arecord processes under this lock.
 _capture_lock = threading.Lock()
 _capture_users = 0
 _capture_open = False
-_listener_holding = False
-_listener_released = threading.Condition(_capture_lock)
+_capture_released = threading.Condition(_capture_lock)
+_speech_lock = threading.Lock()
 
 
 def _acquire_capture() -> None:
     global _capture_users, _capture_open
     with _capture_lock:
-        _capture_users += 1  # register intent: listener stays out, capture_in_use True
-        # Wait (bounded) for the wake listener to release the single-opener mic.
-        deadline = time.monotonic() + 1.0
-        while _listener_holding:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            _listener_released.wait(remaining)
-        # Serialize against any other capturer already holding arecord open.
+        _capture_users += 1
         while _capture_open:
-            _listener_released.wait()
+            _capture_released.wait()
         _capture_open = True
 
 
@@ -75,31 +69,12 @@ def _release_capture() -> None:
         if _capture_users > 0:
             _capture_users -= 1
         _capture_open = False
-        _listener_released.notify_all()
+        _capture_released.notify_all()
 
 
 def capture_in_use() -> bool:
     with _capture_lock:
         return _capture_users > 0
-
-
-def listener_acquire_mic() -> bool:
-    """Wake listener claims the mic. False if a capturer owns it (capturer wins),
-    in which case the listener must stay paused."""
-    global _listener_holding
-    with _capture_lock:
-        if _capture_users > 0:
-            return False
-        _listener_holding = True
-        return True
-
-
-def listener_release_mic() -> None:
-    """Wake listener has closed its arecord; wake any capturer waiting to open."""
-    global _listener_holding
-    with _capture_lock:
-        _listener_holding = False
-        _listener_released.notify_all()
 
 
 # ---------------- playback ----------------
@@ -128,24 +103,68 @@ def beep(name: str) -> None:
         play(path)
 
 
-def _voice_sample_rate(model_path: str) -> int:
-    # Piper voices ship as <voice>.onnx + <voice>.onnx.json.
-    for cand in (model_path + ".json", os.path.splitext(model_path)[0] + ".json"):
-        try:
-            with open(cand) as f:
-                sr = json.load(f).get("audio", {}).get("sample_rate")
-            if sr:
-                return int(sr)
-        except (OSError, ValueError):
-            continue
-    return 16000
+def _tts_chunks(text: str):
+    """Split direct /speak calls below the Audio API's input limit."""
+    rest = text.strip()
+    while rest:
+        if len(rest) <= _TTS_MAX_CHARS:
+            yield rest
+            return
+        cut = rest.rfind(" ", 0, _TTS_MAX_CHARS + 1)
+        if cut < _TTS_MAX_CHARS // 2:
+            cut = _TTS_MAX_CHARS
+        yield rest[:cut].strip()
+        rest = rest[cut:].strip()
 
 
-def _espeak(text: str, rate: float) -> None:
+def _response_error(resp) -> str:
     try:
-        subprocess.run(["espeak-ng", "-s", str(int(160 * rate)), text], check=False)
-    except OSError as exc:
-        print("audio: no TTS backend available: %s" % exc, file=sys.stderr)
+        return resp.json()["error"]["message"]
+    except Exception:
+        return (getattr(resp, "text", "") or "").strip()[:300]
+
+
+def _speak_openai(text: str, rate: float, voice: str) -> None:
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key or key == "PUT_YOUR_KEY_HERE":
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+
+    model = os.environ.get("VISIONARY_TTS_MODEL", _TTS_MODEL).strip() or _TTS_MODEL
+    configured_voice = os.environ.get("VISIONARY_TTS_VOICE", "").strip() or voice
+    if configured_voice not in _OPENAI_VOICES:
+        configured_voice = _TTS_VOICE  # migrate unsupported legacy voice ids
+
+    for chunk in _tts_chunks(text):
+        try:
+            resp = requests.post(
+                _TTS_URL,
+                headers={
+                    "Authorization": "Bearer " + key,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "voice": configured_voice,
+                    "input": chunk,
+                    "response_format": "wav",
+                    "speed": rate,
+                },
+                timeout=(5, 30),
+            )
+        except requests.exceptions.RequestException as exc:
+            raise RuntimeError("OpenAI speech request failed: %s" % exc)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                "OpenAI speech API error %s: %s"
+                % (resp.status_code, _response_error(resp))
+            )
+        try:
+            played = subprocess.run(
+                ["aplay", "-q", "-"], input=resp.content, check=False)
+        except OSError as exc:
+            raise RuntimeError("aplay failed: %s" % exc)
+        if played.returncode != 0:
+            raise RuntimeError("aplay exited %d" % played.returncode)
 
 
 def speak(text: str, wait: bool = True) -> None:
@@ -157,30 +176,22 @@ def speak(text: str, wait: bool = True) -> None:
         return
     cfg = state.load_config()
     rate = min(2.0, max(0.5, float(cfg.get("rate") or 1.0)))
-    voice = cfg.get("voice") or "en_US-lessac-low"
-    model = os.path.join(state.HOME, "voices", voice + ".onnx")
-    if not os.path.exists(model):
-        _espeak(text, rate)
-        return
-    try:
-        piper = subprocess.Popen(
-            ["piper", "--model", model, "--output-raw",
-             "--length-scale", "%.3f" % (1.0 / rate)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        aplay = subprocess.Popen(
-            ["aplay", "-q", "-r", str(_voice_sample_rate(model)),
-             "-f", "S16_LE", "-t", "raw", "-"],
-            stdin=piper.stdout)
-        piper.stdout.close()
-        piper.stdin.write(text.encode("utf-8"))
-        piper.stdin.close()
-    except OSError:
-        _espeak(text, rate)
-        return
+    voice = str(cfg.get("voice") or _TTS_VOICE)
+
+    def run() -> None:
+        try:
+            with _speech_lock:
+                _speak_openai(text, rate, voice)
+        except Exception as exc:
+            # Preserve the old speak() contract: audio failures are audible/logged,
+            # but never crash the button dispatcher or boot loop.
+            print("audio: speech failed: %s" % exc, file=sys.stderr)
+            beep("err")
+
     if wait:
-        aplay.wait()
-        if piper.wait() != 0 or aplay.returncode != 0:
-            _espeak(text, rate)
+        run()
+    else:
+        threading.Thread(target=run, daemon=True).start()
 
 
 class SentenceSpeaker:
@@ -372,15 +383,21 @@ class Recorder:
     def stop(self) -> str:
         was_recording = self.recording
         self.recording = False
-        if was_recording:
-            _release_capture()
         if SIM:
+            if was_recording:
+                _release_capture()
             return _sim_wav()
         proc, raw_path = self._proc, self._raw_path
         self._proc = None
         self._raw_path = None
-        if proc is not None:
-            _stop_proc(proc)
+        try:
+            if proc is not None:
+                _stop_proc(proc)
+        finally:
+            # Keep ownership until arecord has actually closed the single-opener
+            # I2S device; otherwise a waiting capture can race into EBUSY.
+            if was_recording:
+                _release_capture()
         rec_dir = os.path.join(state.HOME, "recordings")
         os.makedirs(rec_dir, exist_ok=True)
         out = os.path.join(rec_dir, "rec_%d.wav" % int(time.time()))

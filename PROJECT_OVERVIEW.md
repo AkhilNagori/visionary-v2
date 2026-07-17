@@ -1,6 +1,6 @@
 # Visionary — Project Overview
 
-*AI glasses that read the world aloud. $60 in parts. Open source. Works offline.*
+*AI glasses that read the world aloud. $60 in parts. Open source. One OpenAI key.*
 
 ## The problem
 
@@ -13,7 +13,7 @@ Visionary is a pair of 3D-printed smart glasses with one button:
 - **Press once** — it reads whatever you're facing, aloud, in a natural voice: worksheets, textbooks, handwriting, menus, signs, pill bottles.
 - **Press twice** — it describes the scene: what's around you, who, where, what's written.
 - **Hold and talk** — ask about what you see: "which answer did I circle?", "what's the homework on the board?"
-- **No internet? It still reads.** A fully offline OCR + speech pipeline takes over automatically — critical for classrooms, and something a Rabbit R1 or Humane Pin fundamentally cannot do.
+- **One OpenAI key.** Vision, chat, speech recognition, speech generation, and visual-memory embeddings use the same API credential. Internet access is required for AI actions.
 
 The wearer never touches a screen. Parents and teachers optionally pair a phone app to see reading history, trigger reads remotely, and adjust voice/language.
 
@@ -23,7 +23,7 @@ The wearer never touches a screen. Parents and teachers optionally pair a phone 
 |---|---|---|---|---|
 | Price | **$60 BOM / $99 kit** | $2,000–4,000 | $199 | "free" + $1k phone |
 | Hands-free, sees your POV | Yes | Yes | No | No |
-| Works offline | **Yes** | Partially | No | Some |
+| Works offline | No — internet required for AI | Partially | No | Some |
 | Open source / repairable | **Yes** | No | No | No |
 | Built for classrooms | **Yes** | Clinical market | No | No |
 
@@ -31,16 +31,16 @@ The honest concession: we don't have their industrial design or certifications �
 
 ## How it works (one paragraph)
 
-A head-mounted camera captures on button press. A Raspberry Pi Zero 2 W sends the image to a frontier vision model that returns clean, reading-order text or a scene description, spoken through a temple-mounted speaker via neural TTS. Offline, the same press routes to on-device OCR (Tesseract) and on-device TTS (Piper). A MEMS microphone adds voice questions, dictation, and live translation. Battery is a 2000mAh cell with proper boost/charge circuitry; runtime ~3–4 hours of active classroom use.
+A head-mounted camera captures on button press. A Raspberry Pi Zero 2 W sends the image to OpenAI vision, which returns clean reading-order text or a scene description. The Pi sends spoken input captured through ALSA to `gpt-4o-mini-transcribe`, requests spoken output from `gpt-4o-mini-tts-2025-12-15` with voice `marin`, and plays the returned audio through the temple speaker with ALSA. Chat and `text-embedding-3-small` memory search use the same `OPENAI_API_KEY`. No vision or speech model runs on the Pi; internet access is required. Battery is a 2000mAh cell with proper boost/charge circuitry; runtime is about 3–4 hours of active classroom use.
 
 ## Origin story
 
-Visionary began as a science fair project: a camera on printed frames, a CRNN text-recognition model, and espeak — built to help visually impaired students read handouts. It worked. This version keeps that mission and replaces the brain: frontier vision models for accuracy on real-world materials (handwriting, low light, layouts) with the offline pipeline preserving the original self-contained spirit.
+Visionary began as a science fair project: a camera on printed frames and an on-device text-and-speech prototype built to help visually impaired students read handouts. It worked. This version keeps that mission and moves the AI workload to OpenAI for better results on real-world materials, speech, handwriting, low light, and complex layouts while keeping the Pi software small enough for 32-bit `armhf` hardware.
 
 ## Roadmap
 
 - **Now — v1 "Founder Kit" (30 units)**: hand-assembled or self-solder kit, printed frame, preloaded SD card, full docs. $99 preorder ($79 solder-it-yourself / $149 assembled).
-- **+3 months — v2**: integrated frame (in-temple mic, battery, custom thin PCB), iOS companion app, wake word, visual memory search.
+- **+3 months — v2**: integrated frame (in-temple mic, battery, custom thin PCB), iOS companion app, and visual memory search.
 - **+6–12 months — Classroom Edition**: class-set of 10 + teacher dashboard, district pilot programs, grant-funded distribution (assistive-tech funding exists precisely for this gap).
 
 ## Business snapshot
@@ -52,7 +52,7 @@ Visionary began as a science fair project: a camera on printed frames, a CRNN te
 
 ## Privacy, in one breath
 
-Press-to-capture only. No continuous recording, no accounts, no cloud storage — history lives on the device, and the code is public so you can check.
+Capture is deliberate, not passive. A triggered feature uploads its requested image and/or microphone recording to OpenAI; there is no always-listening wake word or background microphone capture. History lives on the device, and the device code is public so you can verify when capture and upload occur. Review OpenAI's API data controls before classroom use.
 
 ## Team
 

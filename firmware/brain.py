@@ -1,29 +1,30 @@
-"""Cloud brain: OpenAI vision/chat (streaming SSE + function-calling), Whisper
-STT, Tesseract OCR, connectivity check, and the shared prompt bank.
+"""Cloud brain: OpenAI vision/chat, speech transcription, and embeddings hooks.
 
 Error contract: BrainOffline = no connectivity / no usable backend (callers
-fall back to the offline path); RuntimeError = a backend answered with an
-error (callers beep and speak a short failure sentence).
+play an offline earcon); RuntimeError = a backend answered with an error.
 """
 
 import base64
 import json
 import os
 import socket
-import subprocess
+import tempfile
 import threading
 import time
+import wave
 from typing import Callable, Dict, List, Optional
 
 import requests
 
 import state
-import vision
 
 MODEL = os.environ.get("VISIONARY_MODEL", "gpt-4o-mini")
 MAX_TOKENS = 1024
 _API_URL = "https://api.openai.com/v1/chat/completions"
 _API_HOST = "api.openai.com"
+_TRANSCRIPT_URL = "https://api.openai.com/v1/audio/transcriptions"
+_STT_MODEL = "gpt-4o-mini-transcribe"
+_MAX_AUDIO_UPLOAD = 24 * 1024 * 1024  # API hard limit is 25 MB.
 _ONLINE_CACHE_S = 10.0
 _MAX_TOOL_ROUNDS = 5
 
@@ -227,15 +228,14 @@ _online_cache = {"ts": None, "value": False}
 
 
 def is_online(force: bool = False) -> bool:
-    if state.load_config().get("local_only"):
-        return False  # #58: local-only mode keeps everything on-device
     with _online_lock:
         now = time.monotonic()
         if (not force and _online_cache["ts"] is not None
                 and now - _online_cache["ts"] < _ONLINE_CACHE_S):
             return _online_cache["value"]
         value = False
-        if os.environ.get("OPENAI_API_KEY"):
+        key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if key and key != "PUT_YOUR_KEY_HERE":
             try:
                 socket.create_connection((_API_HOST, 443), timeout=2.0).close()
                 value = True
@@ -428,65 +428,105 @@ def chat(messages: List[dict], system: Optional[str] = None,
 
 
 def transcribe(wav_path: str) -> str:
-    api_error = None
-    if is_online() and os.environ.get("OPENAI_API_KEY"):
-        try:
-            return _transcribe_openai(wav_path)
-        except requests.exceptions.RequestException as e:
-            api_error = BrainOffline(str(e))
-        except RuntimeError as e:
-            api_error = e
-    binary = os.path.join(state.HOME, "whisper", "main")
-    model = os.path.join(state.HOME, "whisper", "ggml-tiny.en.bin")
-    if os.path.exists(binary) and os.path.exists(model):
-        return _transcribe_whisper_cpp(wav_path, binary, model)
-    if api_error is not None:
-        raise api_error
-    raise BrainOffline("no transcription backend available")
+    if not is_online() or not os.environ.get("OPENAI_API_KEY", "").strip():
+        raise BrainOffline("OpenAI speech transcription is unavailable")
+    texts = []
+    try:
+        for part in _audio_upload_parts(wav_path):
+            prompt = texts[-1][-500:] if texts else None
+            texts.append(_transcribe_openai(part, prompt=prompt))
+    except requests.exceptions.RequestException as exc:
+        raise BrainOffline(str(exc))
+    return _merge_transcripts(texts)
 
 
-def _transcribe_openai(wav_path: str) -> str:
+def _merge_transcripts(texts) -> str:
+    """Join overlapped STT chunks without repeating their shared words."""
+    words = []
+    for text in texts:
+        incoming = text.split()
+        if not incoming:
+            continue
+
+        def key(word):
+            return "".join(ch.lower() for ch in word if ch.isalnum())
+
+        left = [key(word) for word in words]
+        right = [key(word) for word in incoming]
+        overlap = 0
+        for size in range(min(30, len(left), len(right)), 0, -1):
+            if left[-size:] == right[:size]:
+                overlap = size
+                break
+        words.extend(incoming[overlap:])
+    return " ".join(words).strip()
+
+
+def _audio_upload_parts(wav_path: str):
+    """Yield API-sized WAV paths, deleting any temporary chunks afterward."""
+    if os.path.getsize(wav_path) <= _MAX_AUDIO_UPLOAD:
+        yield wav_path
+        return
+
+    paths = []
+    try:
+        with wave.open(wav_path, "rb") as src:
+            channels = src.getnchannels()
+            width = src.getsampwidth()
+            frame_rate = src.getframerate()
+            total_frames = src.getnframes()
+            frames_per_part = (_MAX_AUDIO_UPLOAD - 4096) // (channels * width)
+            overlap_frames = min(frame_rate, max(0, frames_per_part // 4))
+            while True:
+                start = src.tell()
+                frames = src.readframes(frames_per_part)
+                if not frames:
+                    break
+                fd, path = tempfile.mkstemp(prefix="visionary_stt_", suffix=".wav")
+                os.close(fd)
+                with wave.open(path, "wb") as out:
+                    out.setnchannels(channels)
+                    out.setsampwidth(width)
+                    out.setframerate(frame_rate)
+                    out.writeframes(frames)
+                paths.append(path)
+                yield path
+                end = src.tell()
+                if end >= total_frames:
+                    break
+                # One second of shared audio keeps a word at the upload boundary
+                # intact; _merge_transcripts removes repeated shared words.
+                src.setpos(max(start + 1, end - overlap_frames))
+    except (OSError, wave.Error) as exc:
+        raise RuntimeError("audio is too large and could not be split: %s" % exc)
+    finally:
+        for path in paths:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+def _transcribe_openai(wav_path: str, prompt: Optional[str] = None) -> str:
     key = os.environ["OPENAI_API_KEY"]
+    model = os.environ.get("VISIONARY_STT_MODEL", _STT_MODEL).strip() or _STT_MODEL
+    data = {"model": model, "response_format": "json"}
+    if prompt:
+        data["prompt"] = prompt
     with open(wav_path, "rb") as f:
         resp = requests.post(
-            "https://api.openai.com/v1/audio/transcriptions",
+            _TRANSCRIPT_URL,
             headers={"Authorization": "Bearer " + key},
-            data={"model": "whisper-1"},
+            data=data,
             files={"file": (os.path.basename(wav_path), f, "audio/wav")},
-            timeout=60,
+            timeout=(5, 180),
         )
     if resp.status_code != 200:
         try:
             msg = resp.json()["error"]["message"]
         except Exception:
             msg = (resp.text or "").strip()[:300]
-        raise RuntimeError("Whisper API error %s: %s" % (resp.status_code, msg))
-    return resp.json().get("text", "").strip()
-
-
-def _transcribe_whisper_cpp(wav_path: str, binary: str, model: str) -> str:
-    # subprocess that exits: keeps the 512MB RAM budget (contract invariant 4)
-    try:
-        proc = subprocess.run(
-            [binary, "-m", model, "-f", wav_path, "-nt"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
+        raise RuntimeError(
+            "OpenAI transcription API error %s: %s" % (resp.status_code, msg)
         )
-    except (OSError, subprocess.TimeoutExpired) as e:
-        raise RuntimeError("whisper.cpp failed: %s" % e)
-    if proc.returncode != 0:
-        detail = proc.stderr.decode("utf-8", errors="replace").strip()[:300]
-        raise RuntimeError("whisper.cpp exited %d: %s" % (proc.returncode, detail))
-    lines = proc.stdout.decode("utf-8", errors="replace").splitlines()
-    return " ".join(ln.strip() for ln in lines if ln.strip())
-
-
-def ocr(jpeg: bytes) -> str:
-    img = vision.preprocess_for_ocr(jpeg)
-    try:
-        import pytesseract  # optional dep; only the offline path needs it
-    except ImportError:
-        raise RuntimeError("pytesseract is not installed")
-    try:
-        return pytesseract.image_to_string(img)
-    except Exception as e:  # includes TesseractNotFoundError (binary missing)
-        raise RuntimeError("Tesseract OCR failed: %s" % e)
+    return resp.json().get("text", "").strip()

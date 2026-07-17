@@ -43,16 +43,4 @@ def _describe():
             return
 
     audio.beep("offline")
-    audio.speak("Scene description needs internet. Reading any text instead.")
-    try:
-        ocr_text = brain.ocr(jpeg).strip()
-    except Exception:
-        audio.beep("err")
-        audio.speak("I couldn't read any text either.")
-        timer.log("describe")
-        return
-    timer.mark("ocr")
-    audio.speak(ocr_text if ocr_text else "No text found.")
-    entry_id = state.get_history().add("describe", ocr_text, image_path=image_path)
-    index_memory(entry_id, ocr_text)
     timer.log("describe")

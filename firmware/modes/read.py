@@ -44,16 +44,7 @@ def _read():
             timer.log("read")
             return
 
+    # AI inference is intentionally cloud-only. The local earcon still tells the
+    # wearer what happened when Wi-Fi or the API is unavailable.
     audio.beep("offline")
-    try:
-        ocr_text = brain.ocr(jpeg).strip()
-    except Exception:
-        audio.beep("err")
-        audio.speak("I can't read right now. There is no internet and no offline reader.")
-        timer.log("read")
-        return
-    timer.mark("ocr")
-    audio.speak(ocr_text if ocr_text else "I couldn't find any text.")
-    entry_id = state.get_history().add("read", ocr_text, image_path=image_path)
-    index_memory(entry_id, ocr_text)
     timer.log("read")

@@ -20,14 +20,8 @@ struct SettingsView: View {
     @State private var showForgetConfirm = false
 
     private static let voices = [
-        "en_US-lessac-low",
-        "en_US-lessac-medium",
-        "en_US-amy-low",
-        "en_US-amy-medium",
-        "en_US-ryan-low",
-        "en_US-ryan-medium",
-        "en_GB-alan-low",
-        "en_GB-alan-medium",
+        "marin", "cedar", "alloy", "ash", "ballad", "coral", "echo",
+        "fable", "nova", "onyx", "sage", "shimmer", "verse",
     ]
 
     private static let readLanguages = [
@@ -124,7 +118,6 @@ struct SettingsView: View {
             voiceSection(cfg)
             translationSection(cfg)
             twoWaySection(cfg)
-            wakeWordSection(cfg)
             navigationSection(cfg)
             packsSection
             wifiSection
@@ -220,16 +213,6 @@ struct SettingsView: View {
             Text("Two-Way Interpreter")
         } footer: {
             Text("A live conversation loop: the glasses hear their language and speak yours, then translate your replies out loud. A single button press stops it.")
-        }
-    }
-
-    private func wakeWordSection(_ cfg: Binding<DeviceConfig>) -> some View {
-        Section {
-            Toggle("Wake word", isOn: cfg.wakeWord.enabled)
-        } header: {
-            Text("Wake Word")
-        } footer: {
-            Text("Say \u{201C}Hey Jarvis\u{201D} to ask a question hands-free. Detection runs entirely on the glasses — audio is never stored or uploaded. The phrase is \u{201C}Hey Jarvis\u{201D} in this version; a custom \u{201C}Hey Vision\u{201D} phrase is planned.")
         }
     }
 
@@ -396,6 +379,14 @@ struct SettingsView: View {
     }
 
     private func voiceDisplayName(_ id: String) -> String {
+        let openAIVoices: [String: String] = [
+            "marin": "Marin", "cedar": "Cedar", "alloy": "Alloy",
+            "ash": "Ash", "ballad": "Ballad", "coral": "Coral",
+            "echo": "Echo", "fable": "Fable", "nova": "Nova",
+            "onyx": "Onyx", "sage": "Sage", "shimmer": "Shimmer",
+            "verse": "Verse",
+        ]
+        if let name = openAIVoices[id] { return name }
         let parts = id.split(separator: "-")
         guard parts.count >= 3 else { return id }
         let region: String

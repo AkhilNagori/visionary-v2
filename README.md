@@ -1,6 +1,6 @@
 # Visionary
 
-AI glasses that read the world aloud. A visually impaired student in a mainstream classroom hits the same wall dozens of times a day: the worksheet being handed out, the page number on the board, the textbook paragraph everyone else is silently reading. Visionary is a pair of 3D-printed smart glasses with one button that reads printed material aloud, describes scenes, answers spoken questions about what you see, and keeps working offline when the WiFi drops. It runs on a Raspberry Pi Zero 2 W, the bill of materials is around $60, and every line of it is open source so you can verify what it does.
+AI glasses that read the world aloud. A visually impaired student in a mainstream classroom hits the same wall dozens of times a day: the worksheet being handed out, the page number on the board, the textbook paragraph everyone else is silently reading. Visionary is a pair of 3D-printed smart glasses with one button that reads printed material aloud, describes scenes, and answers spoken questions about what you see. It runs on a Raspberry Pi Zero 2 W, the bill of materials is around $60, and every line of it is open source so you can verify what it does. AI features require internet access and one OpenAI API key.
 
 ## Repo map
 
@@ -29,11 +29,13 @@ Docs:
 
 You need: a Raspberry Pi Zero 2 W, a microSD card (8GB or larger), a computer with [Raspberry Pi Imager](https://www.raspberrypi.com/software/) installed, your WiFi name and password, and an OpenAI API key. Wire the hardware per `HARDWARE_TUTORIAL.md` (camera, I2S amp and mic, button); the software boots and speaks even before the button and camera are wired, so you can test as you go.
 
-### 1. Flash the SD card
+### 1. Prepare Raspberry Pi OS
+
+Already running Raspberry Pi OS 13 (Trixie) on the Pi? Keep it; a 32-bit `armhf` install does not need to be reflashed. Skip to first boot/SSH and run the clean setup from a fresh clone.
 
 1. Put the microSD in your computer and open Raspberry Pi Imager.
 2. **Choose Device**: Raspberry Pi Zero 2 W.
-3. **Choose OS**: Raspberry Pi OS (other) > **Raspberry Pi OS Lite (64-bit)** (Bookworm).
+3. **Choose OS**: the current Raspberry Pi OS Lite (Trixie), either 32-bit or 64-bit. The cloud-inference build supports the Pi Zero 2 W's 32-bit `armhf` image as well as 64-bit.
 4. **Choose Storage**: your card.
 5. Click **Next**, then **Edit Settings**:
    - General tab: hostname `visionary`, username `pi` with a password you'll remember, your WiFi SSID and password (add your phone hotspot as a second network later — it's the backup at demos), your locale and timezone.
@@ -51,16 +53,55 @@ You need: a Raspberry Pi Zero 2 W, a microSD card (8GB or larger), a computer wi
 
 ### 3. Install Visionary
 
+If this Pi previously ran `pi-ocr-reader`, its Google-TTS fork, or a partial
+Visionary install, clean those applications first (this leaves Wi-Fi, SSH,
+camera/audio packages, and the base OS alone):
+
+```bash
+cd ~
+STAMP="$(date +%Y%m%d-%H%M%S)"
+mkdir -m 700 "$HOME/visionary-preclean-$STAMP"
+sudo cp -a /boot/firmware/config.txt "$HOME/visionary-preclean-$STAMP/config.txt"
+
+sudo systemctl disable --now visionary.service visionary-api.service 2>/dev/null || true
+while IFS= read -r unit_file; do
+  unit="$(basename "$unit_file")"
+  sudo systemctl disable --now "$unit" || true
+  sudo rm -f -- "$unit_file"
+done < <(sudo grep -RIlE \
+  'pi-ocr-(reader(-google-tts)?|transfer)' \
+  /etc/systemd/system --include='*.service' 2>/dev/null || true)
+
+sudo rm -f /etc/systemd/system/visionary.service \
+  /etc/systemd/system/visionary-api.service \
+  /etc/avahi/services/visionary.service \
+  /etc/visionary.env
+sudo rm -rf /opt/visionary /var/log/visionary
+rm -rf "$HOME/pi-ocr-reader" "$HOME/pi-ocr-reader-google-tts" \
+  "$HOME/pi-ocr-transfer"
+sudo systemctl daemon-reload
+sudo systemctl reset-failed
+
+if [ -d "$HOME/visionary-v2" ]; then
+  mv "$HOME/visionary-v2" "$HOME/visionary-v2.before-$STAMP"
+fi
+```
+
+Keep `visionary-v2.before-*` and the boot-config backup only until the new
+install passes its camera, microphone, speaker, and service checks. Do not run
+`apt autoremove`: the new build reuses the Pi's camera, ALSA, Python, Git,
+rsync, and Avahi packages.
+
 On the Pi:
 
 ```
 sudo apt update && sudo apt install -y git
 git clone https://github.com/AkhilNagori/visionary-v2.git
 cd visionary-v2
-sudo bash firmware/setup.sh --with-whisper --with-wakeword
+sudo bash firmware/setup.sh
 ```
 
-`--with-whisper` builds offline speech-to-text (takes ~10 minutes on the Zero 2 W). `--with-wakeword` installs the hands-free "Hey Jarvis" trigger. Both are optional; the script is idempotent, so re-run it any time to add a flag.
+The clean setup deliberately does not install Piper, eSpeak, Tesseract, whisper.cpp, or openWakeWord. The Pi only handles the camera, button, ALSA microphone capture, ALSA speaker playback, and API requests; speech and vision inference run in OpenAI's cloud. The script is idempotent, so it is safe to run again.
 
 ### 4. Add your API key
 
@@ -74,7 +115,7 @@ Set this line, then Ctrl+O, Enter, Ctrl+X to save and exit:
 OPENAI_API_KEY=sk-your-key-here
 ```
 
-`OPENAI_API_KEY` is required: it powers vision and chat, Whisper speech-to-text, and the embeddings behind visual memory search. Get one at platform.openai.com; $5 of credit covers hundreds of reads.
+`OPENAI_API_KEY` is required and is the only AI credential: it powers vision/chat, `gpt-4o-mini-transcribe` speech-to-text, `gpt-4o-mini-tts-2025-12-15` speech generation (voice `marin`), and `text-embedding-3-small` visual-memory embeddings. Get one at platform.openai.com. Keep the key only in `/etc/visionary.env`; do not commit it to the repository.
 
 ### 5. Reboot and verify
 
@@ -86,7 +127,8 @@ About 30 seconds later the glasses say **"Visionary ready"** — and on the very
 
 - **Read**: single-press the button. You should hear the capture beep, then speech within a few seconds.
 - **Audio**, if it's silent: `speaker-test -c1 -t sine -f 440` (Ctrl+C to stop).
-- **Camera**: `libcamera-still -o test.jpg`, then `scp` it over and look at it. Set the lens focus to ~30cm per `HARDWARE_TUTORIAL.md` step 1 — this single adjustment decides whether OCR works.
+- **Microphone**: `arecord -D plughw:0,0 -f S32_LE -r 48000 -c 2 -d 3 /tmp/mic.wav && aplay /tmp/mic.wav`.
+- **Camera**: `rpicam-still -o test.jpg`, then `scp` it over and look at it. Set the lens focus to ~30cm per `HARDWARE_TUTORIAL.md` step 1 — this single adjustment decides whether the vision model receives a readable image.
 - **Services**: `systemctl status visionary visionary-api` should both be active; `journalctl -u visionary -n 50` shows the log if not.
 - **Pairing for the iOS app**: the QR is at `/opt/visionary/pairing_qr.png` (`scp pi@visionary.local:/opt/visionary/pairing_qr.png .`), or use the spoken 6-digit code with `http://visionary.local:8321` in the app's manual entry.
 
@@ -103,9 +145,8 @@ One button on the temple. Everything is a press or a hold.
 | Triple press | Start / stop the recorder |
 | Hold 1s, speak, release | Ask a question about what you see |
 | Hold 5s | Safe shutdown |
-| Say the wake word (when enabled) | Ask hands-free, no button |
 
-The shipped wake-word trigger is "Hey Jarvis" (an openWakeWord model that runs locally); a custom "Hey Vision" model is a documented follow-up. When a background mode is running (two-way translate or navigation assist), a single press stops it instead of reading.
+When a background mode is running (two-way translate or navigation assist), a single press stops it instead of reading. There is no always-listening wake word in the clean install; voice capture starts only after a deliberate button gesture or an explicitly started recorder/translation session.
 
 ## Features by tier
 
@@ -114,7 +155,7 @@ The shipped wake-word trigger is "Hey Jarvis" (an openWakeWord model that runs l
 - **Read anything** (single press): worksheets, textbooks, signs, menus, pill bottles, handwriting, read aloud in reading order.
 - **Scene description** (double press): 2 to 3 concrete sentences on objects, people, layout, and visible text, framed from your point of view.
 - **Translation reading** (config): foreign text in view is read in your language, any language to any language.
-- **Offline mode** (automatic): no internet, on-device Tesseract OCR and Piper TTS take over seamlessly.
+- **Cloud speech and vision**: OpenAI handles vision/chat, speech recognition, and speech generation with the same API key. If internet access is unavailable, the device gives a local error beep and logs the connection problem; AI actions cannot complete offline.
 - **Spoken status** (boot and errors): the device never fails silently.
 - **Safe shutdown** (hold 5s): spoken goodbye, clean halt.
 
@@ -128,7 +169,6 @@ The shipped wake-word trigger is "Hey Jarvis" (an openWakeWord model that runs l
 ### Tier 3 — advanced
 
 - **Visual memory**: every capture is embedded and searchable ("what room number was on that door?").
-- **Wake word**: hands-free trigger via openWakeWord, around 15% CPU on the Zero 2 W, all audio processed locally.
 - **Navigation assist**: periodic captures call out obstacles and signage. This is assistive information, not a certified safety device.
 - **Agent actions**: "add this flyer's date to my calendar" is handled by tool-use and executed by the paired phone.
 - **Classroom fleet dashboard**: a teacher sees reading activity across a class set, text summaries only.
@@ -153,4 +193,4 @@ make demo    # SIM end-to-end: single press -> read pipeline -> printed speech
 
 ## Privacy
 
-Press-to-capture only. Nothing is captured or uploaded except what you deliberately trigger. There is no continuous recording, no account, and no cloud storage. Reading history lives on the device. Wake-word audio is processed on-device and is never stored or uploaded. The classroom dashboard sees text summaries only, never images or audio, because it simply never requests those endpoints. Because the whole stack is open source, you can verify every one of these claims instead of trusting them.
+Capture is deliberate, not passive: a button action uploads the requested image and/or microphone recording to OpenAI so the feature can run. Recorder and translation sessions begin only when explicitly started and end when stopped; there is no always-listening wake word or background microphone capture. The device keeps its reading history locally. The classroom dashboard sees text summaries only, never images or audio, because it never requests those endpoints. Review OpenAI's data controls for your API account before classroom use. Because the device code is open source, you can verify when capture and upload occur.

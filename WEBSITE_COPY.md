@@ -19,7 +19,7 @@
 > Hackable AI glasses, $60 in parts. Built in the open, starting with the people who need it most.
 
 ## Subline (under any hero)
-Powered by frontier AI models · works offline · your data stays on-device · ships as a kit or assembled
+Powered by OpenAI · deliberate capture, never always-listening · history stays on-device · ships as a kit or assembled
 
 ## The "it replaces" section (site body — this is your ad engine)
 

@@ -19,11 +19,6 @@ struct TwoWayConfig: Codable, Equatable {
     var yours: String
 }
 
-struct WakeWordConfig: Codable, Equatable {
-    var enabled: Bool
-    var model: String
-}
-
 struct NavigationConfig: Codable, Equatable {
     var enabled: Bool
     var intervalS: Double
@@ -36,11 +31,10 @@ struct DeviceConfig: Codable, Equatable {
     var twoWay: TwoWayConfig
     var gestures: [String: String]
     var features: [String: Bool]
-    var wakeWord: WakeWordConfig
     var navigation: NavigationConfig
 
     enum CodingKeys: String, CodingKey {
-        case voice, rate, language, twoWay, gestures, features, wakeWord, navigation
+        case voice, rate, language, twoWay, gestures, features, navigation
     }
 
     // Custom encode so clearing `language` sends an explicit null: PUT /config
@@ -58,7 +52,6 @@ struct DeviceConfig: Codable, Equatable {
         try c.encode(twoWay, forKey: .twoWay)
         try c.encode(gestures, forKey: .gestures)
         try c.encode(features, forKey: .features)
-        try c.encode(wakeWord, forKey: .wakeWord)
         try c.encode(navigation, forKey: .navigation)
     }
 }

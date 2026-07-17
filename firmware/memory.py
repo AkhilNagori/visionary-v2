@@ -61,10 +61,8 @@ def _db() -> sqlite3.Connection:
 def embed(texts: List[str]) -> Optional[List[List[float]]]:
     """OpenAI text-embedding-3-small. None when offline or no key.
 
-    Gated on brain.is_online() so nothing is ever POSTed to OpenAI while the
-    device is offline or in local_only mode (#58): is_online() returns False for
-    both, and indexing runs on every history.add — including read.py's offline
-    OCR path — so this is the single choke point that keeps captures on-device.
+    Gated on brain.is_online(), so indexing degrades to local full-text search
+    whenever the OpenAI service cannot be reached.
     """
     if not texts:
         return []

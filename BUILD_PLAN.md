@@ -4,7 +4,7 @@ Goal by Saturday morning: one polished wearable demo unit + one "guts on a board
 
 ## What it does (demo version)
 
-Single button press → camera snaps the page → OpenAI vision reads ALL text aloud through the speaker in a natural voice, ~4–6 s. Double press → describes the whole scene ("a whiteboard with a diagram, two people to your left..."). Works offline too (Tesseract OCR + Piper TTS) when WiFi drops — huge credibility point at a crowded conference.
+Single button press → camera snaps the page → OpenAI vision returns all visible text → OpenAI `gpt-4o-mini-tts-2025-12-15` (voice `marin`) speaks it through the speaker, about 4–6 s. Double press → describes the whole scene ("a whiteboard with a diagram, two people to your left..."). Hold-to-ask captures the mic locally with ALSA, sends the clip to `gpt-4o-mini-transcribe`, and returns a spoken OpenAI answer. AI features require working internet access.
 
 ## Hardware audit
 
@@ -51,15 +51,15 @@ PowerBoost 5V / GND  →  Pi pin 2 / pin 6
 | Speaker | amp + / − | — |
 | Camera | CSI ribbon (Zero-size connector, contacts toward board) | — |
 
-## Camera focus — do this or OCR will fail
+## Camera focus — do this or reading will fail
 
-The V1.3-style lens is fixed-focus at ~1m+. Reading distance is 25–40cm. **Twist the lens** (grip with pliers gently or the supplied tool; some have a glue dot — score it with a blade) counterclockwise a fraction of a turn until text at 30cm is sharp. Check with `libcamera-still -o test.jpg` over SSH.
+The V1.3-style lens is fixed-focus at ~1m+. Reading distance is 25–40cm. **Twist the lens** (grip with pliers gently or the supplied tool; some have a glue dot — score it with a blade) counterclockwise a fraction of a turn until text at 30cm is sharp. Check with `rpicam-still -o test.jpg` over SSH.
 
 ## Software (files in firmware/)
 
-1. Flash **Raspberry Pi OS Lite 64-bit (Bookworm)** with Raspberry Pi Imager. Preconfigure WiFi (home + your phone hotspot SSID) and SSH in the imager settings.
+1. Use the current **Raspberry Pi OS Lite (Trixie)**, 32-bit or 64-bit. The cloud-inference build supports the Zero 2 W's 32-bit `armhf` install. Preconfigure WiFi (home + your phone hotspot SSID) and SSH in the imager settings.
 2. `scp` the repo over, then `sudo bash firmware/setup.sh`.
-3. Put your OpenAI API key in `/etc/visionary.env` (platform.openai.com — $5 of credit covers hundreds of demo reads on gpt-4o-mini).
+3. Put your OpenAI API key in `/etc/visionary.env`. That one credential powers vision/chat, `gpt-4o-mini-transcribe`, `gpt-4o-mini-tts-2025-12-15`, and `text-embedding-3-small`; never commit it to Git.
 4. Reboot. It announces "Visionary ready" on boot. No keyboard/screen ever needed at the booth.
 
 ## 3D printed frame strategy
@@ -90,7 +90,7 @@ Don't design a full glasses frame from scratch — no time to iterate fit. Inste
 
 ## Contingencies
 
-- Cloud/WiFi dies at venue → offline mode kicks in automatically (Tesseract + Piper). Practice this demo path too.
+- Cloud/WiFi dies at venue → switch to the preconfigured phone hotspot. AI features do not run offline, so keep a recorded demo video on both phones as the final fallback.
 - Audio too quiet on the con floor → GAIN pin to GND (12dB), and lean speaker to visitor's ear; also keep a small USB speaker as backup via aplay.
 - Pi crashes → systemd auto-restarts the app in 3s; hard crash → power cycle takes ~25s, fill with pitch talk.
 - Unit breaks → display unit is your backup demo; video of it working on your phone is the backup-backup. **Record a demo video Friday night.**

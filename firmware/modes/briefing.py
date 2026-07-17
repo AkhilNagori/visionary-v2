@@ -73,7 +73,7 @@ def _briefing():
     try:
         _speak_stream([{"role": "user", "content": blob}], _BRIEFING_PROMPT, timer)
     except (brain.BrainOffline, RuntimeError):
-        # Summariser unreachable (offline or local-only): read the raw headlines.
+        # The reasoning call failed; try the raw headlines if TTS is reachable.
         audio.beep("offline")
         audio.speak("I couldn't summarise, so here are your headlines.")
         audio.speak(". ".join(t for t, _ in items[:5]) + ".")

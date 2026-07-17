@@ -351,8 +351,6 @@ def _run_listen(mode):
     the transcript (no photo), speak the result."""
     timer = StageTimer()
     if not brain.is_online():
-        # transcription might survive offline via whisper.cpp, but the chat
-        # step is cloud-only, so fail fast with a clear spoken reason.
         _speak_needs_net(mode)
         return
 

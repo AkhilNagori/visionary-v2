@@ -3,6 +3,7 @@ streaming + error contract, the Tier-3 tool-use loop, transcribe routing, and
 prompt helpers. No test here ever touches a real socket or HTTP endpoint."""
 
 import json
+import os
 import wave
 
 import pytest
@@ -224,6 +225,10 @@ def test_transcribe_uses_openai_when_online(load, monkeypatch, tmp_path):
 
     def fake_post(url, headers=None, data=None, files=None, timeout=None, **kw):
         assert "openai" in url
+        assert data == {
+            "model": "gpt-4o-mini-transcribe",
+            "response_format": "json",
+        }
         return FakeJSON({"text": "hello there"})
 
     monkeypatch.setattr(brain.requests, "post", fake_post)
@@ -236,9 +241,39 @@ def test_transcribe_offline_without_backend_raises(load, monkeypatch, tmp_path):
     monkeypatch.setattr(brain, "is_online", lambda force=False: False)
     wav = tmp_path / "utt.wav"
     _write_wav(wav)
-    # No whisper.cpp installed under HOME/whisper -> no backend at all.
     with pytest.raises(brain.BrainOffline):
         brain.transcribe(str(wav))
+
+
+def test_large_wav_is_split_below_upload_limit(load, monkeypatch, tmp_path):
+    brain = load("brain")
+    wav = tmp_path / "lecture.wav"
+    with wave.open(str(wav), "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(16000)
+        out.writeframes(b"\x01\x00" * 10000)
+
+    monkeypatch.setattr(brain, "_MAX_AUDIO_UPLOAD", 8192)
+    seen_paths = []
+    total_frames = 0
+    for part in brain._audio_upload_parts(str(wav)):
+        seen_paths.append(part)
+        assert os.path.getsize(part) < brain._MAX_AUDIO_UPLOAD
+        with wave.open(part, "rb") as chunk:
+            total_frames += chunk.getnframes()
+
+    assert len(seen_paths) > 1
+    assert total_frames > 10000  # adjacent chunks overlap for boundary context
+    assert all(not os.path.exists(path) for path in seen_paths)
+
+
+def test_overlapped_transcripts_are_deduplicated(load):
+    brain = load("brain")
+    assert brain._merge_transcripts([
+        "The first section ends with this phrase.",
+        "with this phrase. The next section starts here.",
+    ]) == "The first section ends with this phrase. The next section starts here."
 
 
 # --- prompt helpers ---------------------------------------------------------

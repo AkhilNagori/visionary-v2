@@ -78,7 +78,7 @@ Premise: camera + mic + speaker + WiFi + frontier AI, worn on your face. That's 
 55. Prompt packs — community "apps" that are just prompts: birder pack, D&D pack, chess pack ★(concept)
 56. Mode marketplace — share/install packs by QR
 57. Multi-glasses mesh — two wearers share context ("show them what I'm seeing")
-58. Local-only mode — everything on-device, zero cloud, for schools with strict privacy
+58. District privacy controls — managed retention, API data-policy checks, and capture audit logs
 59. SDK — capture/speak/listen API, three functions, infinite hacks
 
 ## Can it replace a phone? The honest pitch

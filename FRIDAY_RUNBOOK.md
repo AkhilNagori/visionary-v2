@@ -28,7 +28,7 @@ Rule: **test after every solder joint**. A multimeter continuity check costs 10 
 | AM | Triage the agent-built code: deploy **Tier 1 only** to the Pi first | single/double press flawless 10/10 on bench |
 | Midday | Add Tier 2 hold-to-ask once mic is soldered | 5 consecutive good voice Q&As |
 | Midday | Recorder + translation ONLY if ahead of schedule | — |
-| 4pm | **Latency pass**: streaming TTS starts < 4s after press | measured, logged |
+| 4pm | **Latency pass**: OpenAI `gpt-4o-mini-tts-2025-12-15` audio starts < 4s after the first model sentence | measured, logged |
 | 6pm | Full dress rehearsal with Akhil: 20 end-to-end runs on battery, on the **phone hotspot** (Saturday's network) | ≥18/20 clean |
 | 7pm | Record the demo video (phone, good light, real worksheet) | 60s clip on both phones |
 | 8pm | **SOFTWARE FREEZE.** Clone SD card to .img + flash the spare card | spare card boots |
@@ -51,8 +51,8 @@ Warning on the 12-agent build: 173k tokens of untested code ≠ a demo. Deploy i
 ## Saturday morning (30 min, at venue)
 
 1. Power on glasses → "Visionary ready"
-2. Hotspot up → confirm cloud read works once
-3. Kill WiFi → confirm offline read works once  ← rehearse this; it's your best trick
+2. Hotspot up → confirm cloud read, `gpt-4o-mini-transcribe`, and `gpt-4o-mini-tts-2025-12-15` playback once
+3. Switch between venue WiFi and the phone hotspot once; AI features require a live connection
 4. Tape QR sign, stack one-pagers, props out, video looping
 5. First visitor: run DEMO_AND_PREORDERS.md script
 
@@ -61,6 +61,6 @@ Warning on the 12-agent build: 173k tokens of untested code ≠ a demo. Deploy i
 | Disaster | Response |
 |---|---|
 | Glasses dead Saturday AM | Spare Pi + cloned SD into the frame; else display unit + video + strong pitch — preorders don't require a live demo, they require a story |
-| Venue RF swamp kills hotspot | Offline mode IS the demo — "no internet needed, watch" |
+| Venue RF swamp kills hotspot | Try the second phone/network; if neither works, play the recorded demo and state that AI features require internet |
 | Voice features flaky | Demo Tier 1 only; say "voice ships in the kit" — read-aloud alone beat the science fair |
 | Battery build unstable | Power bank in pocket, cable down the temple — nobody at Open Sauce will mind |

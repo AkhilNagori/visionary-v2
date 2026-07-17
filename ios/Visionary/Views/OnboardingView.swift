@@ -45,12 +45,11 @@ struct OnboardingView: View {
              ]),
         Page(icon: "lock.shield",
              title: "Private by design",
-             message: "A camera on your face has to earn trust.",
+             message: "A camera and microphone on your face have to earn trust. Visionary uses OpenAI for vision, transcription, reasoning, and an AI-generated speaking voice.",
              rows: [
                 PageRow(icon: "hand.tap", text: "It captures only when you press the button"),
-                PageRow(icon: "internaldrive", text: "History stays on the glasses, not in a cloud"),
-                PageRow(icon: "antenna.radiowaves.left.and.right.slash",
-                        text: "Local-only mode runs everything on-device"),
+                PageRow(icon: "cloud", text: "Triggered images, speech, and reply text go to OpenAI for processing"),
+                PageRow(icon: "internaldrive", text: "Saved history is stored on the glasses"),
              ]),
     ]
 

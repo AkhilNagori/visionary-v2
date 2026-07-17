@@ -46,15 +46,15 @@ Also: mic **SEL/LR → GND** (left channel), amp **SD → leave unconnected**, a
 
 ### Step 0 — Bench brain (no soldering)
 
-1. Flash **Raspberry Pi OS Lite 64-bit (Bookworm)** with Raspberry Pi Imager. In the imager's settings: hostname `visionary`, enable SSH, add your home WiFi AND your phone hotspot.
+1. Use the current **Raspberry Pi OS Lite (Trixie)**, either 32-bit or 64-bit. The clean cloud-inference build supports the Zero 2 W's 32-bit `armhf` installation. In Raspberry Pi Imager's settings: hostname `visionary`, enable SSH, and add your home WiFi; add your phone hotspot after first boot as a backup.
 2. Power the bare Pi from a normal USB supply into **PWR IN** (the micro-USB port nearer the corner). SSH in: `ssh pi@visionary.local`.
 3. Copy over the repo and run `sudo bash firmware/setup.sh` (see software doc — use the `googlevoicehat-soundcard` overlay, not `max98357a`).
 
 ### Step 1 — Camera
 
 1. Pi OFF. Lift the CSI connector latch, ribbon in **contacts facing the board**, close latch.
-2. Test: `libcamera-still -o test.jpg`, scp it over and look at it.
-3. **Fix the focus now**: the lens is factory-focused past 1m; you read at ~30cm. Grip the lens barrel gently with pliers (score the glue dot with a blade if present), turn counterclockwise in tiny increments, re-shoot a printed page at 30cm each time until text is crisp. This step decides whether OCR works at all.
+2. Test: `rpicam-still -o test.jpg`, scp it over and look at it.
+3. **Fix the focus now**: the lens is factory-focused past 1m; you read at ~30cm. Grip the lens barrel gently with pliers (score the glue dot with a blade if present), turn counterclockwise in tiny increments, re-shoot a printed page at 30cm each time until text is crisp. This step decides whether the cloud vision model receives readable detail.
 
 ### Step 2 — Power chain
 
@@ -66,7 +66,7 @@ Also: mic **SEL/LR → GND** (left channel), amp **SD → leave unconnected**, a
 4. PowerBoost **5V / GND** → Pi **pin 2 / pin 6**.
 5. Before connecting the Pi: switch on, measure PowerBoost output with the multimeter — expect **5.0–5.2V**. Then connect the Pi and boot.
 6. Charging: plug USB into the **TP4056** port, with the power switch OFF. Red = charging, blue/green = full. **Never charge while the Pi runs.**
-7. Soak test: boot, run `libcamera-still` in a loop 20×, then `dmesg | grep -i volt` — must be clean.
+7. Soak test: boot, run `rpicam-still` in a loop 20×, then `dmesg | grep -i volt` — must be clean.
 
 ### Step 3 — Speaker (MAX98357A)
 
@@ -82,6 +82,8 @@ Also: mic **SEL/LR → GND** (left channel), amp **SD → leave unconnected**, a
    ```
    (With the googlevoicehat overlay the card handles both directions; check names with `arecord -l` / `aplay -l`.)
 3. Speak at arm's length — playback should be clearly intelligible. Some hiss is normal for MEMS; the software applies gain + high-pass.
+
+`arecord` and `aplay` stay local because they interface with the physical mic and speaker. After a deliberate voice gesture, the firmware uploads the captured WAV to OpenAI `gpt-4o-mini-transcribe`; it requests reply audio from OpenAI `gpt-4o-mini-tts-2025-12-15` (voice `marin`) and plays that audio with ALSA. The clean installer does not put Piper, eSpeak, whisper.cpp, Tesseract, or openWakeWord on the Pi.
 
 ### Step 5 — Button
 

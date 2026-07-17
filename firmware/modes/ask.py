@@ -52,20 +52,6 @@ def ask_end(cancelled=False):
         _fail("Sorry, that question failed. Please try again.")
 
 
-def ask_from_wake():
-    # type: () -> None
-    """Wake-word entry: listen until silence instead of a held button."""
-    try:
-        audio.beep("rec_start")
-        wav = audio.record_until_silence()
-        if wav is None:
-            audio.speak("I didn't catch that.")
-            return
-        _answer(wav)
-    except Exception:
-        _fail("Sorry, that question failed. Please try again.")
-
-
 def reset_memory():
     # type: () -> None
     _memory.clear()
@@ -116,7 +102,7 @@ def _answer(wav):
             },
         )
     except brain.BrainOffline:
-        _answer_offline(question)
+        audio.beep("offline")
         return
     except RuntimeError:
         audio.beep("err")
@@ -129,16 +115,6 @@ def _answer(wav):
         "ask", answer, extra={"question": question}, image_path=image_path)
     index_memory(entry_id, question + "\n" + answer)
     timer.log("ask")
-
-
-def _answer_offline(question):
-    # type: (str) -> None
-    audio.beep("offline")
-    hits = memory.search(question, k=1)  # FTS5 works without a network
-    if hits and (hits[0].get("text") or "").strip():
-        audio.speak(hits[0]["text"].strip())
-    else:
-        audio.speak("I need internet to answer questions.")
 
 
 # ---------------- tool handlers ----------------

@@ -12,10 +12,10 @@ Tips: laminate the props (sweaty hands), keep readings SHORT (a 3-sentence prop 
 
 ## Pitch answers you'll need
 
-- "How does it work?" → Camera + Raspberry Pi; image goes to a vision AI that reads/describes; falls back to fully offline OCR when there's no internet. (Demo offline mode if they're technical — it's the crowd-pleaser at a hacker con.)
+- "How does it work?" → Camera + Raspberry Pi; a deliberate button press sends the image or speech to OpenAI, and the answer comes back in an AI-generated voice. AI features need internet, so keep a phone hotspot ready at the booth.
 - "Battery life?" → "Runs all day off a pocket power bank — a 5,000mAh bank is ~6+ hours. The production kit integrates the battery into the frame."
 - "Is it private?" → Nothing is stored; press-to-capture only, no continuous recording. (Say this proactively — a camera on glasses at a con WILL get this question.)
-- "Latency?" → 4–6 seconds cloud, similar offline.
+- "Latency?" → Usually 4–6 seconds on a solid Wi-Fi or hotspot connection; AI actions do not run offline.
 - "Why not a phone app?" → Hands-free, head-aimed, no aiming a phone you can't see; built for a classroom workflow.
 
 ## Preorders — realistic framing

@@ -52,7 +52,7 @@ Pairing is validated against the device's `/status` endpoint before it sticks, t
 
 ## Tabs
 
-Home (status plus remote Read/Describe triggers), History (everything the glasses read, with thumbnails), Search (visual memory: "what room number was on that door?"), Live (MJPEG preview for lens focus and aiming practice), Recorder (transcripts and AI summaries of recordings), Settings (voice, speech rate, translation language, wake word, navigation assist, WiFi, updates).
+Home (status plus remote Read/Describe triggers), History (everything the glasses read, with thumbnails), Search (visual memory: "what room number was on that door?"), Live (MJPEG preview for lens focus and aiming practice), Recorder (transcripts and AI summaries of recordings), Settings (OpenAI voice, speech rate, translation language, navigation assist, WiFi, updates).
 
 Battery shows a dash in v1: the PowerBoost Basic has no fuel gauge, so the API reports `null`.
 

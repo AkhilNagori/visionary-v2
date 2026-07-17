@@ -3,10 +3,9 @@
 
 Fakes a single button press through the real read pipeline in SIM mode, with a
 generated golden worksheet as the "camera" image, and asserts that *something*
-was spoken. With OPENAI_API_KEY set (and network) it exercises the real cloud
-read path; with no key it runs offline, so on a machine without Tesseract the
-graceful spoken failure ("I can't read right now...") still counts as a pass —
-the point is that the device never fails silently either way.
+was spoken. With OPENAI_API_KEY set it exercises the real cloud path. Without a
+key it injects a deterministic model reply, so the smoke test stays free and
+network-independent while still exercising capture, streaming, and speech.
 
 Prints PASS/FAIL and exits 0/1 so it can gate a demo build.
 """
@@ -22,9 +21,6 @@ def main():
 
     os.environ["VISIONARY_SIM"] = "1"
     os.environ["VISIONARY_HOME"] = tempfile.mkdtemp(prefix="visionary_demo_")
-    # Cloud when OPENAI_API_KEY is set, offline otherwise — either way the device
-    # must speak something, never fail silently.
-
     firmware = os.path.join(root, "firmware")
     for path in (firmware, here):
         if path not in sys.path:
@@ -37,8 +33,7 @@ def main():
 
     import audio
     spoken = []
-    # Capture every spoken utterance, whether it comes through speak() directly
-    # (offline path) or the streaming SentenceSpeaker (online path).
+    # Capture every spoken utterance from direct or streaming speech paths.
     audio.speak = lambda text, wait=True: spoken.append(text)
 
     class _CaptureSpeaker:
@@ -51,6 +46,18 @@ def main():
             pass
 
     audio.SentenceSpeaker = _CaptureSpeaker
+
+    if not os.environ.get("OPENAI_API_KEY"):
+        import brain
+        brain.is_online = lambda force=False: True
+
+        def fake_see(jpeg, prompt, on_text=None, **kwargs):
+            text = "Science worksheet about photosynthesis."
+            if on_text:
+                on_text(text)
+            return text
+
+        brain.see = fake_see
 
     from modes import read
     read.run_read()

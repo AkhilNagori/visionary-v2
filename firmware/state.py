@@ -25,24 +25,22 @@ TOKEN_PATH = os.path.join(HOME, "token")
 QR_PATH = os.path.join(HOME, "pairing_qr.png")
 
 DEFAULT_CONFIG = {
-    "voice": "en_US-lessac-low",
+    "voice": "marin",
     "rate": 1.0,
     "language": None,
     "two_way": {"enabled": False, "theirs": "es", "yours": "en"},
     "gestures": {"single": "read", "double": "describe", "triple": "recorder"},
     "features": {"ask": True, "recorder": True},
-    "wake_word": {"enabled": False, "model": "hey_jarvis"},
     "navigation": {"enabled": False, "interval_s": 3.0},
     "active_mode": None,
     "captions": {"help_phrase": None, "listen_name": None},
     "feeds": [],
-    "local_only": False,
     "emergency_contact": None,
 }
 
 
 def ensure_dirs() -> None:
-    for sub in ("captures", "recordings", "voices", "sounds"):
+    for sub in ("captures", "recordings", "sounds"):
         os.makedirs(os.path.join(HOME, sub), exist_ok=True)
 
 

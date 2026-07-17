@@ -1,6 +1,6 @@
 [Unit]
 Description=Visionary local API (FastAPI on :8321)
-After=network.target visionary.service
+After=network-online.target visionary.service
 Wants=visionary.service
 
 [Service]

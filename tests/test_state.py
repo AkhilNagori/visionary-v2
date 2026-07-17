@@ -12,9 +12,9 @@ def test_default_config_has_contract_schema(load):
     cfg = state.DEFAULT_CONFIG
     # Every top-level key the API validates against and the iOS app edits.
     for key in ("voice", "rate", "language", "two_way", "gestures",
-                "features", "wake_word", "navigation"):
+                "features", "navigation"):
         assert key in cfg, "DEFAULT_CONFIG missing %r" % key
-    assert cfg["voice"] == "en_US-lessac-low"
+    assert cfg["voice"] == "marin"
     assert cfg["rate"] == 1.0
     assert cfg["language"] is None
     assert cfg["gestures"] == {"single": "read", "double": "describe",
