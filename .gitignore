@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+.demo_home/
+tests/golden/
+.DS_Store
