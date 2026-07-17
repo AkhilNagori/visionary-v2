@@ -521,3 +521,97 @@ until paired. `ios/README.md`: `brew install xcodegen && xcodegen generate`
 5. Perceived latency: first spoken sentence starts while the model is still streaming.
 6. Navigation assist is assistive information, not a certified safety device — the
    framing appears in the prompt, the spoken disclaimer, the app, and the docs.
+
+---
+
+# v3 — Mode-pack platform + expanded feature universe
+
+Implements MOONSHOT_FEATURES.md. Insight: most features are prompts on five
+shared pipelines, so modes are DATA. Genuinely new machinery is listed after.
+
+## firmware/packs.py — modes as data
+
+Mode dict: `{"id","name","category","description","pipeline","prompt","options":{}}`.
+`pipeline` ∈ `see` (capture+prompt→speak) | `ask` (hold-to-ask system prompt) |
+`listen` (record→transcribe→prompt→speak) | `loop` (background periodic see) |
+`session` (multi-turn, below).
+
+```python
+def load_modes() -> Dict[str, dict]      # builtin pack + HOME/packs/*.json (validated)
+def install_pack(url: str) -> List[str]  # fetch JSON {"name","modes":[...]}, validate, save; returns mode ids
+def remove_pack(name: str) -> bool
+def list_packs() -> List[dict]           # [{"name","builtin":bool,"modes":[ids]}]
+def run_mode(mode_id: str) -> None       # dispatch by pipeline (see/listen inline; loop/session via main.py)
+```
+
+`firmware/packs/builtin.json` ships EVERY ★ feature from MOONSHOT_FEATURES.md
+as a mode with a crafted prompt (~35 modes: skim, explain_10, explain_phd, math,
+handwriting, form_reader, pokedex, sommelier, currency_color, expiry, allergen,
+tour_guide, chess, teleprompter(listen), whiteboard_email(see+phone_action),
+language_immersion(loop), pronunciation(listen), recipe(session), done_check,
+substitutions, mechanic, ikea(session), multimeter, wiring_check, med_verify,
+price_check, receipt_split, quiz(session), socratic(session), i_spy(session),
+escape_room(session), pub_quiz, roast, boarding_pass, meeting_scribe, ...).
+Config: `"active_mode": null` (null = classic read); when set, single-press runs
+that mode's pipeline instead. Gestures may also map `"mode:<id>"`.
+
+## New machinery
+
+- **modes/session.py**: `run_session(mode, stop_event)` — opening capture spoken
+  through the mode prompt, then turn loop: record_until_silence → transcribe →
+  brain.chat (mode prompt as system, photo on first turn) → speak; exits on
+  "stop"/"exit"/stop_event/single-press; 20-turn cap.
+- **modes/captions.py**: `run_captions(stop_event)` — Tier "live captions": VAD
+  chunks → transcribe → `events.publish("caption", text)`; NO speech out. Config
+  `"captions": {"help_phrase": null, "listen_name": null}`: transcript hit →
+  spoken alert + event + (help) phone_action send_text to `emergency_contact`.
+- **modes/briefing.py**: `run_briefing()` — fetch config `"feeds": []` RSS
+  (requests + xml.etree) → brain.chat summary → speak. Exposed as mode + tool.
+- **firmware/events.py**: `publish(kind, data)`, `get_since(seq) -> (seq, [events])`,
+  ring buffer 500. main.py UDS adds `{"cmd":"events","since":n}`. api.py
+  `GET /events` = SSE (`text/event-stream`), polls UDS every 0.5s.
+- **firmware/flashcards.py**: table `cards(id,ts,question,answer,due,interval_d,ease)`
+  in history.db; `generate_from_today(n=20)` via brain.chat over today's history;
+  `due_cards()`; `review(card_id, grade 0..3)` SM-2-lite (again/hard/good/easy).
+- **firmware/timers.py**: `set_timer(name, seconds)`, `list_timers()`,
+  `cancel_timer(name)`; fire = speak "<name> timer is done" + event.
+- **firmware/sdk.py**: the 3-function hack surface — `capture() -> bytes`,
+  `speak(text)`, `listen(max_s=15) -> str`. Documented example in docstring.
+- **brain**: new tools TOOL_SET_TIMER, TOOL_SET_MODE (switch active_mode by
+  voice), TOOL_GET_BRIEFING — wired into ask.py handlers.
+- **state config additions**: `active_mode`, `captions{}`, `feeds[]`,
+  `local_only: false`, `emergency_contact: null`.
+- **local-only mode (#58)**: `brain.is_online()` returns False when config
+  `local_only` — everything runs on-device, zero cloud.
+- **Actions**: types add `send_text {to?,body}`, `email_draft {to?,subject,body}`,
+  `note {title,body}`. iOS auto-executes ONLY calendar_event/reminder; the rest
+  land in an in-app Actions inbox (iOS cannot auto-send messages/mail).
+
+## API additions (same auth)
+
+| `/modes` GET | all modes + active_mode | `/modes/active` POST `{"id"\|null}` |
+| `/packs` GET / `/packs/install` POST `{"url"}` / `/packs/{name}` DELETE |
+| `/events` GET SSE | `/flashcards/generate` POST / `/flashcards/due` GET / `/flashcards/{id}/review` POST `{"grade"}` |
+| `/listen` POST `{"max_s"}` → `{"text"}` | `/timers` GET |
+
+## iOS v3 — flagship quality
+
+Tab restructure: **Home / Library / Live / Modes / Settings** (+ Pairing gate).
+- `ModesView`: modes grouped by category, search, activate/deactivate, pack
+  install via QR scan or URL field, pack management. This screen is the store.
+- Live tab segmented: **Live** (MJPEG) / **Captions** (SSE client `EventSource`-style
+  class, giant Dynamic-Type text, high contrast, auto-scroll, help-phrase badge) /
+  **Guide** (MJPEG + push-to-talk text→`/speak` = remote sighted guide).
+- Library tab segmented: **History / Search / Recorder / Flashcards / Notes**.
+  FlashcardsView: generate, due badge, card-flip review with Again/Hard/Good/Easy.
+  NotesView: `note` actions collected in-app, shareable.
+- `ActionsInboxView` (badge on Home): send_text → prefilled MFMessageCompose,
+  email_draft → MFMailCompose, note → save to Notes list.
+- HomeView redesign: hero status, current-mode card, quick-action mode grid,
+  actions-inbox badge.
+- Polish bar: onboarding flow on first launch, haptics, matchedGeometry where it
+  earns it, full VoiceOver, Dynamic Type, dark mode. No external packages.
+
+Roadmap-only (hardware/OS-gated, do NOT build): VoIP calls, notification
+mirroring, multi-glasses mesh, GPS navigation. MOONSHOT_FEATURES.md gets
+built/roadmap annotations at finalize.
