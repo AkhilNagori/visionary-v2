@@ -48,7 +48,8 @@ def listen(max_s: float = 15.0) -> str:
     Returns "" when nothing was said or transcription is unavailable — and beeps
     so the wearer knows it was heard-but-not-understood rather than ignored.
     """
-    wav = audio.record_until_silence(max_s=float(max_s))  # type: Optional[str]
+    wav = audio.record_until_silence(
+        max_s=float(max_s), preserve_ambiguous=True)  # type: Optional[str]
     if not wav:
         return ""
     try:

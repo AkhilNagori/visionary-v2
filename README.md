@@ -109,13 +109,25 @@ The clean setup deliberately does not install Piper, eSpeak, Tesseract, whisper.
 sudo nano /etc/visionary.env
 ```
 
-Set this line, then Ctrl+O, Enter, Ctrl+X to save and exit:
+The installer already creates the microphone entries. Replace the generated API
+key placeholder and verify each line appears once, then press Ctrl+O, Enter,
+Ctrl+X to save and exit:
 
 ```
 OPENAI_API_KEY=sk-your-key-here
+VISIONARY_MIC_CHANNEL=1
+VISIONARY_MIC_GAIN_DB=24
+VISIONARY_MIC_HIGHPASS_HZ=100
 ```
 
 `OPENAI_API_KEY` is required and is the only AI credential: it powers vision/chat, `gpt-4o-mini-transcribe` speech-to-text, `gpt-4o-mini-tts-2025-12-15` speech generation (voice `marin`), and `text-embedding-3-small` visual-memory embeddings. Get one at platform.openai.com. Keep the key only in `/etc/visionary.env`; do not commit it to the repository.
+
+The microphone defaults match `SEL/LR → GND`: channel `1` is the left I2S
+slot, gain is a limited +24 dB digital boost with 1 dB final headroom, and the
+100 Hz high-pass removes frame/handling rumble. Accepted overrides are channel
+`1`–`2`, gain `0`–`36` dB, and high-pass `0`–`500` Hz (`0` disables it). Use
+channel `2` only for `SEL/LR → 3.3V`. Restart `visionary.service` after changing
+these values.
 
 ### 5. Reboot and verify
 
@@ -127,7 +139,7 @@ About 30 seconds later the glasses say **"Visionary ready"** — and on the very
 
 - **Read**: single-press the button. You should hear the capture beep, then speech within a few seconds.
 - **Audio**, if it's silent: `speaker-test -c1 -t sine -f 440` (Ctrl+C to stop).
-- **Microphone**: `arecord -D plughw:0,0 -f S32_LE -r 48000 -c 2 -d 3 /tmp/mic.wav && aplay /tmp/mic.wav`.
+- **Microphone**: `arecord -D plughw:0,0 -f S32_LE -r 48000 -c 2 -d 3 /tmp/mic.wav && aplay /tmp/mic.wav`. This raw hardware check bypasses Visionary's processing. Hold-to-ask tests channel selection, high-pass, gain, and OpenAI transcription; it stops when you release the button. Session/listen and captions captures additionally exercise the adaptive VAD. Deliberate one-shot listens keep unresolved quiet speech; continuous modes suppress a truly steady loud baseline instead of repeatedly uploading it.
 - **Camera**: `rpicam-still -o test.jpg`, then `scp` it over and look at it. Set the lens focus to ~30cm per `HARDWARE_TUTORIAL.md` step 1 — this single adjustment decides whether the vision model receives a readable image.
 - **Services**: `systemctl status visionary visionary-api` should both be active; `journalctl -u visionary -n 50` shows the log if not.
 - **Pairing for the iOS app**: the QR is at `/opt/visionary/pairing_qr.png` (`scp pi@visionary.local:/opt/visionary/pairing_qr.png .`), or use the spoken 6-digit code with `http://visionary.local:8321` in the app's manual entry.

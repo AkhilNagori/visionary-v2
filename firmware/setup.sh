@@ -86,6 +86,14 @@ touch /etc/visionary.env
 # Add the placeholder only when absent — never clobber a key the operator set.
 grep -q '^OPENAI_API_KEY=' /etc/visionary.env || \
   echo 'OPENAI_API_KEY=PUT_YOUR_KEY_HERE' >> /etc/visionary.env
+# Measured defaults for the shipped ICS-43434 wiring (SEL -> GND / left slot).
+# Preserve operator tuning on every idempotent setup run.
+grep -q '^VISIONARY_MIC_CHANNEL=' /etc/visionary.env || \
+  echo 'VISIONARY_MIC_CHANNEL=1' >> /etc/visionary.env
+grep -q '^VISIONARY_MIC_GAIN_DB=' /etc/visionary.env || \
+  echo 'VISIONARY_MIC_GAIN_DB=24' >> /etc/visionary.env
+grep -q '^VISIONARY_MIC_HIGHPASS_HZ=' /etc/visionary.env || \
+  echo 'VISIONARY_MIC_HIGHPASS_HZ=100' >> /etc/visionary.env
 chmod 600 /etc/visionary.env
 
 echo "== 7/7 services (firmware + local API + avahi) =="

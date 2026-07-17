@@ -51,10 +51,10 @@ Firmware (all three tiers) + companion iOS app. The firmware lives in `firmware/
 ## System context
 
 - **Device**: Pi Zero 2 W (quad A53, 512MB RAM), current Raspberry Pi OS Lite Trixie; both 32-bit `armhf` and 64-bit are supported because model inference runs in the cloud.
-- **Audio**: one I2S bus, `googlevoicehat-soundcard` overlay → ALSA card with playback (MAX98357A) + capture (ICS-43434, 48kHz S32_LE; downsample to 16kHz mono for STT).
+- **Audio**: one I2S bus, `googlevoicehat-soundcard` overlay → ALSA card with playback (MAX98357A) + capture (ICS-43434, 48kHz S32_LE). Firmware selects the configured live I2S slot, applies a 100 Hz high-pass and +24 dB limited digital gain with final headroom, then produces 16kHz mono for STT.
 - **Input**: one GPIO button (17). Gesture grammar: single / double / triple / hold.
 - **Cloud**: one `OPENAI_API_KEY` powers vision/chat (`gpt-4o-mini` by default), STT (`gpt-4o-mini-transcribe`), TTS (`gpt-4o-mini-tts-2025-12-15`, voice `marin`), and embeddings (`text-embedding-3-small`). There is no local model fallback; AI features require internet.
-- **Config**: `/etc/visionary.env` (keys), `/opt/visionary/config.json` (voice, speed, language, mode flags — the iOS app edits this file via the local API).
+- **Config**: `/etc/visionary.env` (API secret and hardware/audio overrides), `/opt/visionary/config.json` (voice, speed, language, mode flags — the iOS app edits this file via the local API).
 - **Process model**: single Python service (`visionary.service`, systemd, auto-restart) + optional `visionary-api.service` for the app/API. Watchdog: systemd `Restart=on-failure`.
 
 ## Repo layout (target)
@@ -104,7 +104,12 @@ Engineering notes:
 
 Engineering notes:
 - STT: upload the deliberately captured 16kHz mono WAV to OpenAI `gpt-4o-mini-transcribe`. The Pi does not install or run whisper.cpp.
-- Recording: ALSA capture 48k stereo → mono 16k with `numpy` decimation; simple energy VAD to trim silence.
+- Recording: ALSA captures 48k stereo; firmware selects the live I2S channel,
+  filters/amplifies it with SoX, and resamples to 16k mono. Session capture uses an
+  adaptive noise-floor VAD with hysteresis; it preserves all samples and keeps
+  ambiguous speech instead of applying an aggressive gate. Deliberate one-shot
+  listens conservatively retain an unresolved loud opening; continuous modes
+  suppress a steady, speechless baseline to avoid repeated STT uploads.
 - Conversation memory: last 6 exchanges in RAM, cleared on shutdown.
 - RAM budget: keep only camera/audio buffers and application state on the Pi; all model inference runs in OpenAI's cloud.
 

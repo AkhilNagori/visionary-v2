@@ -46,9 +46,10 @@ def run_captions(stop_event):
 def _loop(stop_event):
     # type: ("threading.Event") -> None
     _last_fire.clear()
-    audio.beep("ok")  # audible "captions on"; no speech, per the caption contract
+    # Finish the mode-on cue before the loop opens the microphone.
+    audio.beep("ok", wait=True)  # audible "captions on"; no speech
     while not stop_event.is_set():
-        wav = audio.record_until_silence()
+        wav = audio.record_until_silence(preserve_ambiguous=False)
         if stop_event.is_set():
             _discard(wav)
             break

@@ -54,6 +54,9 @@ visionary/
 | `VISIONARY_TTS_MODEL` | OpenAI speech model id | `gpt-4o-mini-tts-2025-12-15` |
 | `VISIONARY_TTS_VOICE` | OpenAI speech voice | `marin` |
 | `VISIONARY_ALSA_CAPTURE` | arecord device | `plughw:0,0` |
+| `VISIONARY_MIC_CHANNEL` | one-based live I2S slot (`1` = left/SEL GND; `2` = right/SEL 3.3V) | `1` |
+| `VISIONARY_MIC_GAIN_DB` | limited digital gain (`0`–`36` dB) after selecting the live mic slot | `24` |
+| `VISIONARY_MIC_HIGHPASS_HZ` | microphone high-pass cutoff (`0` disables; max `500` Hz) | `100` |
 
 SIM mode is decided **once per module import** via
 `SIM = os.environ.get("VISIONARY_SIM") == "1"`.
@@ -144,7 +147,7 @@ Line format: `ts=<unix> event=read capture_ms=213 model_ms=1830 tts_first_ms=420
 
 ```python
 def play(path: str, wait: bool = False) -> None          # aplay; sim: print
-def beep(name: str) -> None
+def beep(name: str, wait: bool = False) -> None
     # name ∈ capture | ok | err | offline | rec_start | rec_stop  (HOME/sounds/<name>.wav)
 def speak(text: str, wait: bool = True) -> None
     # POST text to OpenAI /v1/audio/speech using OPENAI_API_KEY,
@@ -162,14 +165,18 @@ class SentenceSpeaker:
     first_audio_ts: Optional[float]   # monotonic time first sentence started speaking (for metrics)
 
 class Recorder:
-    def start(self) -> None       # arecord S32_LE 48k stereo -> tmp wav; sim: no-op
-    def stop(self) -> str         # stop, convert to 16k mono WAV (sox; numpy fallback), return path
+    def start(self) -> None       # arecord S32_LE 48k stereo -> raw file; sim: no-op
+    def stop(self) -> str         # select live slot -> high-pass -> limited gain -> 16k mono WAV
     recording: bool
 
-def record_until_silence(max_s: float = 15.0, silence_s: float = 1.2) -> Optional[str]
-    # blocking capture that stops after `silence_s` of low energy (numpy RMS on raw
-    # stream) or max_s; returns 16k mono wav path, or None if nothing above threshold.
-    # sim: returns VISIONARY_SIM_WAV or generated silence.
+def record_until_silence(max_s: float = 15.0, silence_s: float = 1.5,
+                         preserve_ambiguous: bool = True) -> Optional[str]
+    # blocking capture with 500ms noise calibration, filtered active-channel dB VAD,
+    # onset/offset hysteresis, consecutive speech confirmation, and a
+    # transient-tolerant trailing-silence window. It never gates samples and
+    # preserves ambiguous speech for deliberate one-shot STT. Continuous modes
+    # pass False so a steady loud room is not repeatedly uploaded. Sim returns
+    # a fixture/generated WAV.
 
 def capture_in_use() -> bool
     # True while a Recorder or record_until_silence owns the mic (module-level flag,
@@ -383,10 +390,12 @@ Battery is `null` in v1 (no fuel gauge on the PowerBoost Basic) — clients show
 - `avahi-visionary.service` → `/etc/avahi/services/`: advertises `_visionary._tcp` port 8321.
 - `setup.sh` (idempotent, Raspberry Pi OS Trixie 32-bit `armhf` or 64-bit): apt
   installs the camera/GPIO Python bindings, requests/Pillow/numpy, ALSA utilities,
-  SoX, rsync, and Avahi; pip installs FastAPI, Uvicorn, and QR support. It enables
+  SoX, rsync, and Avahi; pip installs FastAPI, Uvicorn, and QR support. SoX is
+  the required channel/filter/gain/resample path; conversion errors are logged
+  instead of silently switching processing algorithms. The installer enables
   the I2S overlay (`googlevoicehat-soundcard`, `dtparam=audio=off`), generates local
   event beeps, rsyncs `firmware/` → `/opt/visionary/app/`, creates
-  `/etc/visionary.env` (`OPENAI_API_KEY` placeholder, chmod 600), and installs/enables
+  `/etc/visionary.env` (`OPENAI_API_KEY` placeholder plus measured mic channel/gain/high-pass defaults, chmod 600), and installs/enables
   both services plus Avahi. It installs no Piper, eSpeak, Tesseract, whisper.cpp,
   or openWakeWord, downloads no local models, and accepts no `--with-whisper` or
   `--with-wakeword` flags.
@@ -421,7 +430,9 @@ to 120 chars — summaries, not surveillance. Uses `requests`; no database.
   sign, low-contrast page, blank page) + `expected.json` of must-contain substrings.
 - `test_state.py` (config merge/atomic save, history CRUD + pagination, token stability)
 - `test_gestures.py` (fake clock: single/double/triple, hold→ask, 5s→shutdown-cancels-ask)
-- `test_audio.py` (SentenceSpeaker splitting/order in sim, Recorder sim path)
+- `test_audio.py` (OpenAI TTS, synchronous capture cues, active-channel RMS,
+  channel-select/high-pass/gain/limiter conversion, measured-level adaptive
+  VAD traces, SentenceSpeaker ordering, and Recorder ownership/sim paths)
 - `test_brain.py` (is_online cache w/ monkeypatched socket; `see()` SSE parsing against
   a fake streamed response; transcribe routing; all network mocked)
 - `test_api.py` (`skipif` fastapi missing: 401 without token, config roundtrip, history,

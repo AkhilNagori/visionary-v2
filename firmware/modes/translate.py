@@ -51,7 +51,7 @@ def _loop(stop_event):
             yours=two_way.get("yours", "en"),
         )
 
-        wav = audio.record_until_silence()
+        wav = audio.record_until_silence(preserve_ambiguous=False)
         if stop_event.is_set():
             _discard(wav)
             break

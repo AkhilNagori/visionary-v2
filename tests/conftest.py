@@ -64,7 +64,8 @@ def visionary_env(monkeypatch):
                 "VISIONARY_SIM_IMAGE", "VISIONARY_SIM_WAV",
                 "VISIONARY_MODEL", "VISIONARY_STT_MODEL",
                 "VISIONARY_TTS_MODEL", "VISIONARY_TTS_VOICE",
-                "VISIONARY_ALSA_CAPTURE"):
+                "VISIONARY_ALSA_CAPTURE", "VISIONARY_MIC_CHANNEL",
+                "VISIONARY_MIC_GAIN_DB", "VISIONARY_MIC_HIGHPASS_HZ"):
         monkeypatch.delenv(var, raising=False)
     _purge_firmware_modules()
     yield home

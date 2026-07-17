@@ -18,7 +18,7 @@ Single button press → camera snaps the page → OpenAI vision returns all visi
 | 3.7V 2000mAh LiPo | power | ✅ ~3–4h runtime |
 | PowerBoost 1000 Basic | 5V boost | ✅ real 1A boost, replaces the sagging MT3608 |
 | Adafruit USB mini mic + OTG adapter | voice input | ✅ plugs into Pi data port |
-| SPH0645 I2S MEMS mic | v2 in-frame mic | ✅ do NOT wire before Saturday |
+| ICS-43434 I2S MEMS mic | v2 in-frame mic | ✅ wired/tested |
 | 3D filament + printer | frame | ✅ |
 
 ## Power chain (PowerBoost 1000 Basic + TP4056)

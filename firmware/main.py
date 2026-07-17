@@ -533,7 +533,8 @@ class Dispatcher:
             return {"ok": False, "error": "busy"}
         wav = None
         try:
-            wav = audio.record_until_silence(max_s=float(max_s))
+            wav = audio.record_until_silence(
+                max_s=float(max_s), preserve_ambiguous=True)
             text = brain.transcribe(wav) if wav else ""
             return {"ok": True, "text": text}
         except brain.BrainOffline:

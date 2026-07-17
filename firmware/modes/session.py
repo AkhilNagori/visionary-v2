@@ -95,7 +95,7 @@ def _loop(mode, stop_event):
 
     turns = 0
     while not stop_event.is_set() and turns < MAX_TURNS:
-        wav = audio.record_until_silence()
+        wav = audio.record_until_silence(preserve_ambiguous=False)
         if stop_event.is_set():
             _discard(wav)
             break

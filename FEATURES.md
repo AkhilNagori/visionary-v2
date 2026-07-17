@@ -10,7 +10,7 @@ R1 today ($199): voice AI chat, magic camera (vision Q&A), translation, voice re
 4. **One-key cloud pipeline**: vision, chat, `gpt-4o-mini-transcribe` speech recognition, `gpt-4o-mini-tts-2025-12-15` speech, and visual-memory embeddings all use the same `OPENAI_API_KEY`. The Pi does no model inference.
 5. **Fully open source, $60 BOM**: hackers can build/mod it. R1 is a closed $199 box.
 
-## Tier 2 — unlocked by the $7 INMP441 mic (order tonight)
+## Tier 2 — unlocked by the ICS-43434 I2S mic
 
 6. **Ask about what you see** (hold button, talk): "which of these is gluten free?", "summarize this page", "what's the wifi password on that sign?" Photo + your question → spoken answer. *This is the R1's core loop, but head-mounted.*
 7. **Voice assistant**: general Q&A, no camera needed. ALSA mic capture → OpenAI `gpt-4o-mini-transcribe` → OpenAI chat → OpenAI `gpt-4o-mini-tts-2025-12-15` (`marin`) → ALSA playback.

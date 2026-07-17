@@ -76,12 +76,21 @@ Also: mic **SEL/LR → GND** (left channel), amp **SD → leave unconnected**, a
 ### Step 4 — Microphone (ICS-43434)
 
 1. Only 4 new connections: VDD→pin 1 (3.3V — **never 5V**), GND→pin 14, SD→pin 38, SEL→GND. SCK and WS **piggyback on the same pins 12 and 35** the amp already uses — solder the mic's clock wires onto the amp's clock joints or directly to the header.
-2. Test record-then-play loop:
+2. The ICS-43434 is bottom-ported: mount the breakout's exposed PCB side with
+   the tiny acoustic hole facing outward/down toward a short case vent, with
+   the component side facing inward. Do not cover that hole with glue, tape,
+   foam, or the printed frame.
+3. Test record-then-play loop:
    ```
    arecord -D plughw:0,0 -f S32_LE -r 48000 -c 2 -d 3 t.wav && aplay t.wav
    ```
    (With the googlevoicehat overlay the card handles both directions; check names with `arecord -l` / `aplay -l`.)
-3. Speak at arm's length — playback should be clearly intelligible. Some hiss is normal for MEMS; the software applies gain + high-pass.
+4. Speak from the intended wearing position, about 8–12 cm from the acoustic
+   port. Playback should be intelligible; some MEMS hiss is normal. The raw
+   command bypasses firmware processing. With `SEL→GND`, Visionary selects
+   channel 1, applies a 100 Hz high-pass and +24 dB limited digital gain with
+   final headroom. VAD-based session/listen modes evaluate that filtered live
+   channel; hold-to-ask records until you release the button.
 
 `arecord` and `aplay` stay local because they interface with the physical mic and speaker. After a deliberate voice gesture, the firmware uploads the captured WAV to OpenAI `gpt-4o-mini-transcribe`; it requests reply audio from OpenAI `gpt-4o-mini-tts-2025-12-15` (voice `marin`) and plays that audio with ALSA. The clean installer does not put Piper, eSpeak, whisper.cpp, Tesseract, or openWakeWord on the Pi.
 
@@ -114,7 +123,10 @@ Don't pierce, crush, or solder directly onto the cell tabs. If it ever puffs, ge
 | Pi reboots on capture | voltage sag | check solder joints thick/short; confirm PowerBoost not MT3608; battery charged |
 | No audio out | wrong overlay | `googlevoicehat-soundcard` in config.txt, `dtparam=audio=off`, reboot |
 | Mic records silence | SEL floating | SEL→GND; check SD on pin 38 |
+| Quiet but clean speech | port obstructed or wrong live slot | expose/aim the acoustic port; verify `VISIONARY_MIC_CHANNEL=1` for SEL→GND; then tune gain |
+| Speech is distorted/clipped | excessive digital gain | reduce `VISIONARY_MIC_GAIN_DB` in `/etc/visionary.env` and restart `visionary` |
+| Sessions never stop listening | intermittent frame/speaker noise | isolate the mic from rubbing/vibration and keep its port away from the speaker enclosure |
 | Audio + mic won't work together | two overlays fighting | remove `max98357a` overlay line, keep only googlevoicehat |
 | Camera "not detected" | ribbon flipped/loose | contacts toward board, reseat both ends |
-| Blurry OCR | lens focus | Step 1.3, re-twist at 30cm |
+| Cloud reading misses text | lens focus | Step 1.3, re-twist at 30cm |
 | Undervoltage in dmesg | thin wires | shorten/thicken 5V run, resolder |

@@ -31,7 +31,9 @@ def ask_begin():
     try:
         if _rec.recording:
             return
-        audio.beep("rec_start")
+        # Finish the speaker cue before opening the nearby microphone so the
+        # cue cannot dominate the quiet wearer's recording.
+        audio.beep("rec_start", wait=True)
         _rec.start()
     except Exception:
         _fail("Sorry, I couldn't start listening.")

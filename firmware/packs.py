@@ -294,8 +294,8 @@ def _run_ask(mode):
         _speak_needs_net(mode)
         return
 
-    audio.beep("rec_start")
-    wav = audio.record_until_silence()
+    audio.beep("rec_start", wait=True)
+    wav = audio.record_until_silence(preserve_ambiguous=True)
     if wav is None:
         audio.beep("err")
         audio.speak("I didn't catch a question.")
@@ -354,8 +354,8 @@ def _run_listen(mode):
         _speak_needs_net(mode)
         return
 
-    audio.beep("rec_start")
-    wav = audio.record_until_silence()
+    audio.beep("rec_start", wait=True)
+    wav = audio.record_until_silence(preserve_ambiguous=True)
     if wav is None:
         audio.beep("err")
         audio.speak("I didn't catch anything.")

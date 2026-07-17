@@ -27,7 +27,7 @@ def toggle():
             if _rec.recording:
                 _stop()
             else:
-                audio.beep("rec_start")
+                audio.beep("rec_start", wait=True)
                 _rec.start()
     except Exception:
         try:
@@ -39,8 +39,9 @@ def toggle():
 
 def _stop():
     # type: () -> None
-    audio.beep("rec_stop")
     wav = _rec.stop()
+    # Stop/close arecord before playing the cue so it is not saved in the file.
+    audio.beep("rec_stop")
     # Spoken before transcription: long recordings can take a while to process.
     audio.speak("Processing recording.")
     timer = StageTimer()
