@@ -1,4 +1,4 @@
-# Visionary
+ahats up # Visionary
 
 AI glasses that read the world aloud. A visually impaired student in a mainstream classroom hits the same wall dozens of times a day: the worksheet being handed out, the page number on the board, the textbook paragraph everyone else is silently reading. Visionary is a pair of 3D-printed smart glasses with one button that reads printed material aloud, describes scenes, and answers spoken questions about what you see. It runs on a Raspberry Pi Zero 2 W, the bill of materials is around $60, and every line of it is open source so you can verify what it does. AI features require internet access and one OpenAI API key.
 
