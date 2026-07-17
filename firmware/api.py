@@ -23,6 +23,10 @@ import state
 VERSION = "1.0.0"
 SOCK_PATH = os.path.join(state.HOME, "visionary.sock")
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# The running app dir is a flattened copy of firmware/, so it can't be a git tree.
+# setup.sh keeps a full checkout here; /update pulls it and re-syncs firmware/ -> app.
+REPO_DIR = os.path.join(state.HOME, "src")
+FIRMWARE_DIR = os.path.join(REPO_DIR, "firmware")
 LIVE_BOUNDARY = "visionaryframe"
 CAPTURE_MODES = ("read", "describe", "recorder")
 
@@ -71,6 +75,11 @@ class SpeakBody(BaseModel):
 class WifiBody(BaseModel):
     ssid: str
     psk: str
+
+
+class ActionResultBody(BaseModel):
+    status: str
+    result: str = ""
 
 
 def _wifi_ssid() -> Optional[str]:
@@ -258,10 +267,15 @@ def _restart_services() -> None:
 
 @app.post("/update")
 def update() -> Dict[str, Any]:
+    if not os.path.isdir(os.path.join(REPO_DIR, ".git")):
+        raise HTTPException(
+            status_code=500,
+            detail="no on-device git checkout at " + REPO_DIR + "; re-run setup.sh",
+        )
     try:
         pull = subprocess.run(
             ["git", "pull", "--ff-only"],
-            cwd=APP_DIR, capture_output=True, text=True, timeout=120,
+            cwd=REPO_DIR, capture_output=True, text=True, timeout=120,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise HTTPException(status_code=500, detail="update failed: " + str(exc))
@@ -269,5 +283,41 @@ def update() -> Dict[str, Any]:
         raise HTTPException(
             status_code=500, detail=pull.stderr.strip() or "git pull failed"
         )
+    try:
+        sync = subprocess.run(
+            ["rsync", "-a", "--delete", "--exclude", "__pycache__", "--exclude",
+             "*.pyc", FIRMWARE_DIR + "/", APP_DIR + "/"],
+            capture_output=True, text=True, timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise HTTPException(status_code=500, detail="update sync failed: " + str(exc))
+    if sync.returncode != 0:
+        raise HTTPException(
+            status_code=500, detail=sync.stderr.strip() or "firmware sync failed"
+        )
     threading.Thread(target=_restart_services, daemon=True).start()
     return {"ok": True, "detail": pull.stdout.strip(), "restarting": True}
+
+
+@app.get("/memory/search")
+def memory_search(
+    q: str = Query(..., min_length=1), k: int = Query(5, ge=1, le=50)
+) -> Dict[str, Any]:
+    import memory  # lazy: keeps api importable even where numpy/openai are absent
+    return {"results": memory.search(q, k)}
+
+
+@app.get("/actions")
+def list_actions() -> Dict[str, Any]:
+    return {"actions": state.get_actions().list_pending()}
+
+
+@app.post("/actions/{action_id}")
+def complete_action(action_id: int, body: ActionResultBody) -> Dict[str, Any]:
+    if body.status not in ("done", "failed"):
+        raise HTTPException(
+            status_code=422, detail='status must be "done" or "failed"'
+        )
+    if not state.get_actions().complete(action_id, body.status, body.result):
+        raise HTTPException(status_code=404, detail="unknown action id")
+    return {"ok": True}

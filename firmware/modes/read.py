@@ -5,7 +5,7 @@ import brain
 import state
 import vision
 from metrics import StageTimer
-from modes import stream_see
+from modes import index_memory, stream_see
 
 
 def run_read():
@@ -38,7 +38,9 @@ def _read():
             text = ""
         if text:
             extra = {"language": lang} if lang else None
-            state.get_history().add("read", text, extra=extra, image_path=image_path)
+            entry_id = state.get_history().add(
+                "read", text, extra=extra, image_path=image_path)
+            index_memory(entry_id, text)
             timer.log("read")
             return
 
@@ -52,5 +54,6 @@ def _read():
         return
     timer.mark("ocr")
     audio.speak(ocr_text if ocr_text else "I couldn't find any text.")
-    state.get_history().add("read", ocr_text, image_path=image_path)
+    entry_id = state.get_history().add("read", ocr_text, image_path=image_path)
+    index_memory(entry_id, ocr_text)
     timer.log("read")

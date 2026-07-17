@@ -22,9 +22,14 @@ enum APIError: Error, LocalizedError {
     }
 }
 
-struct APIClient {
+final class APIClient {
     let baseURL: URL
     let token: String
+
+    init(baseURL: URL, token: String) {
+        self.baseURL = baseURL
+        self.token = token
+    }
 
     static let decoder: JSONDecoder = {
         let d = JSONDecoder()
@@ -93,8 +98,28 @@ struct APIClient {
         return r
     }
 
-    func audioURLRequest(id: Int) -> URLRequest {
+    func audioRequest(id: Int) -> URLRequest {
         request("history/\(id)/audio")
+    }
+
+    func memorySearch(_ query: String, k: Int = 5) async throws -> [MemoryHit] {
+        struct Results: Decodable { let results: [MemoryHit] }
+        let wrapper: Results = try await getJSON("memory/search", query: [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "k", value: String(k)),
+        ])
+        return wrapper.results
+    }
+
+    func pendingActions() async throws -> [PhoneAction] {
+        struct Actions: Decodable { let actions: [PhoneAction] }
+        let wrapper: Actions = try await getJSON("actions")
+        return wrapper.actions
+    }
+
+    func completeAction(id: Int, status: String, result: String) async throws {
+        _ = try await send(request("actions/\(id)", method: "POST",
+                                   body: encodeBody(["status": status, "result": result])))
     }
 
     // MARK: - Plumbing

@@ -1,4 +1,5 @@
-"""Cloud brain: Claude vision/chat (streaming SSE), Whisper STT, Tesseract OCR.
+"""Cloud brain: Claude vision/chat (streaming SSE + tool-use), Whisper STT,
+Tesseract OCR, connectivity check, and the shared prompt bank.
 
 Error contract: BrainOffline = no connectivity / no usable backend (callers
 fall back to the offline path); RuntimeError = a backend answered with an
@@ -12,7 +13,7 @@ import socket
 import subprocess
 import threading
 import time
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import requests
 
@@ -25,6 +26,7 @@ _API_URL = "https://api.anthropic.com/v1/messages"
 _API_HOST = "api.anthropic.com"
 _ANTHROPIC_VERSION = "2023-06-01"
 _ONLINE_CACHE_S = 10.0
+_MAX_TOOL_ROUNDS = 5
 
 READ_PROMPT = (
     "You are the voice of assistive smart glasses for a visually impaired "
@@ -51,7 +53,10 @@ ASK_SYSTEM = (
     "plain words: no markdown, no lists, no preamble. When the answer is in "
     "the photo, describe where things are from the wearer's point of view. "
     "If the photo does not show the answer, say so briefly and answer from "
-    "general knowledge when you can."
+    "general knowledge when you can. Use your tools when they help: search "
+    "the wearer's past captures to answer questions about things they saw "
+    "earlier, and queue a phone action when they ask to schedule or be "
+    "reminded of something."
 )
 
 SUMMARY_PROMPT = (
@@ -60,6 +65,80 @@ SUMMARY_PROMPT = (
     "anything to remember or do, in at most five short sentences of plain "
     "words: no markdown, no bullet points, no headings."
 )
+
+NAVIGATE_PROMPT = (
+    "You are the navigation-assist voice of assistive smart glasses for a "
+    "person with low vision, giving quick spoken callouts as they move. This "
+    "is assistive information to help them notice things, NOT a certified "
+    "safety or obstacle-avoidance system, so never tell them it is safe to "
+    "proceed. Look at this point-of-view photo and call out only what is "
+    "genuinely useful right now: hazards or obstacles ahead, doorways, "
+    "stairs, curbs, turns, and signs with their text. Use ONE short spoken "
+    "sentence with point-of-view framing like 'ahead of you' or 'on your "
+    "right'. You will be told your previous callout; if the scene has not "
+    "meaningfully changed, or there is nothing worth mentioning, reply with "
+    "the single word NONE and nothing else."
+)
+
+# Tier 3 agent tools. Handlers are supplied by the caller (see modes/ask.py);
+# brain.py only defines the Anthropic schemas and drives the tool loop.
+TOOL_SEARCH_MEMORY = {
+    "name": "search_memory",
+    "description": (
+        "Search the wearer's own past captures, readings, and recordings — "
+        "everything Visionary has read or heard for them before. Use this "
+        "when they ask about something seen or heard earlier, like 'what "
+        "room number was on that door?' or 'what did the flyer say?'."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "What to look for in the wearer's history.",
+            },
+            "k": {
+                "type": "integer",
+                "description": "How many past items to return (default 5).",
+            },
+        },
+        "required": ["query"],
+    },
+}
+
+TOOL_PHONE_ACTION = {
+    "name": "phone_action",
+    "description": (
+        "Queue an action on the wearer's paired phone, such as adding a "
+        "calendar event or a reminder. Use this when the wearer asks to "
+        "remember, schedule, or be reminded of something — for example "
+        "'add this flyer's date to my calendar'. Briefly confirm out loud "
+        "after queuing it."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "type": {
+                "type": "string",
+                "enum": ["calendar_event", "reminder"],
+                "description": "calendar_event needs a date; reminder does not.",
+            },
+            "title": {
+                "type": "string",
+                "description": "Short title of the event or reminder.",
+            },
+            "date": {
+                "type": "string",
+                "description": "ISO 8601 date or datetime, for a calendar_event.",
+            },
+            "notes": {
+                "type": "string",
+                "description": "Optional extra details.",
+            },
+        },
+        "required": ["type", "title"],
+    },
+}
 
 
 class BrainOffline(Exception):
@@ -101,11 +180,38 @@ def _media_type(image: bytes) -> str:
     return "image/jpeg"
 
 
-def _stream(messages: List[dict], system: Optional[str] = None,
-            on_text: Optional[Callable[[str], None]] = None) -> str:
+def _api_error_message(resp) -> str:
+    try:
+        return resp.json()["error"]["message"]
+    except Exception:
+        return (resp.text or "").strip()[:300]
+
+
+def _post(payload: dict, stream: bool):
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not key:
         raise BrainOffline("ANTHROPIC_API_KEY not set")
+    headers = {
+        "x-api-key": key,
+        "anthropic-version": _ANTHROPIC_VERSION,
+        "content-type": "application/json",
+    }
+    if stream:
+        headers["accept"] = "text/event-stream"
+    try:
+        resp = requests.post(_API_URL, headers=headers, json=payload,
+                             stream=stream, timeout=(5, 60))
+    except requests.exceptions.RequestException as e:
+        raise BrainOffline(str(e))
+    if resp.status_code != 200:
+        msg = _api_error_message(resp)
+        resp.close()
+        raise RuntimeError("Claude API error %s: %s" % (resp.status_code, msg))
+    return resp
+
+
+def _stream(messages: List[dict], system: Optional[str] = None,
+            on_text: Optional[Callable[[str], None]] = None) -> str:
     payload = {
         "model": MODEL,
         "max_tokens": MAX_TOKENS,
@@ -114,24 +220,7 @@ def _stream(messages: List[dict], system: Optional[str] = None,
     }
     if system:
         payload["system"] = system
-    headers = {
-        "x-api-key": key,
-        "anthropic-version": _ANTHROPIC_VERSION,
-        "content-type": "application/json",
-        "accept": "text/event-stream",
-    }
-    try:
-        resp = requests.post(_API_URL, headers=headers, json=payload,
-                             stream=True, timeout=(5, 60))
-    except requests.exceptions.RequestException as e:
-        raise BrainOffline(str(e))
-    if resp.status_code != 200:
-        try:
-            msg = resp.json()["error"]["message"]
-        except Exception:
-            msg = (resp.text or "").strip()[:300]
-        resp.close()
-        raise RuntimeError("Claude API error %s: %s" % (resp.status_code, msg))
+    resp = _post(payload, stream=True)
     parts = []
     try:
         for raw in resp.iter_lines(decode_unicode=True):
@@ -164,9 +253,59 @@ def _stream(messages: List[dict], system: Optional[str] = None,
     return "".join(parts)
 
 
+def _tool_loop(messages: List[dict], tools: List[dict],
+               tool_handlers: Optional[Dict[str, Callable[[dict], str]]],
+               on_text: Optional[Callable[[str], None]]) -> str:
+    handlers = tool_handlers or {}
+    convo = list(messages)
+    rounds = 0
+    while True:
+        payload = {
+            "model": MODEL,
+            "max_tokens": MAX_TOKENS,
+            "messages": convo,
+            "tools": tools,
+        }
+        resp = _post(payload, stream=False)
+        try:
+            data = resp.json()
+        finally:
+            resp.close()
+        blocks = data.get("content", []) or []
+        convo.append({"role": "assistant", "content": blocks})
+        if data.get("stop_reason") == "tool_use" and rounds < _MAX_TOOL_ROUNDS:
+            rounds += 1
+            results = []
+            for block in blocks:
+                if block.get("type") != "tool_use":
+                    continue
+                name = block.get("name", "")
+                handler = handlers.get(name)
+                if handler is None:
+                    result = "No handler available for tool %s." % name
+                else:
+                    try:
+                        result = handler(block.get("input", {}) or {})
+                    except Exception as e:
+                        result = "Tool %s failed: %s" % (name, e)
+                results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.get("id"),
+                    "content": result or "",
+                })
+            convo.append({"role": "user", "content": results})
+            continue
+        text = "".join(b.get("text", "") for b in blocks
+                       if b.get("type") == "text")
+        if on_text is not None:
+            on_text(text)
+        return text
+
+
 def see(jpeg: bytes, prompt: str, on_text: Optional[Callable[[str], None]] = None,
         history_msgs: Optional[List[dict]] = None,
-        system: Optional[str] = None) -> str:
+        tools: Optional[List[dict]] = None,
+        tool_handlers: Optional[Dict[str, Callable[[dict], str]]] = None) -> str:
     content = [
         {"type": "image", "source": {
             "type": "base64",
@@ -176,7 +315,9 @@ def see(jpeg: bytes, prompt: str, on_text: Optional[Callable[[str], None]] = Non
         {"type": "text", "text": prompt},
     ]
     messages = list(history_msgs or []) + [{"role": "user", "content": content}]
-    return _stream(messages, system=system, on_text=on_text)
+    if tools:
+        return _tool_loop(messages, tools, tool_handlers, on_text)
+    return _stream(messages, on_text=on_text)
 
 
 def chat(messages: List[dict], system: Optional[str] = None,

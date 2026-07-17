@@ -4,6 +4,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,66 @@ _WORD = re.compile(r"\w")
 
 def _capture_device() -> str:
     return os.environ.get("VISIONARY_ALSA_CAPTURE", "plughw:0,0")
+
+
+# ---------------- mic ownership ----------------
+# wakeword.py pauses inference while a capture owns the mic. Both Recorder and
+# record_until_silence bracket their real capture with acquire/release; a counter
+# (not a bare bool) keeps ownership correct if two owners ever overlap.
+#
+# The I2S capture is single-opener (plughw, no dsnoop), so the advisory flag is
+# not enough on its own: a capturer must WAIT for the wake listener to actually
+# close its arecord before opening its own. _listener_holding is the source of
+# truth for "the listener has the mic open"; the check-and-set is done under the
+# lock so a capturer always wins a tie (the listener refuses to open while a
+# capturer is registered).
+_capture_lock = threading.Lock()
+_capture_users = 0
+_listener_holding = False
+_listener_released = threading.Condition(_capture_lock)
+
+
+def _acquire_capture() -> None:
+    global _capture_users
+    with _capture_lock:
+        _capture_users += 1
+        deadline = time.monotonic() + 1.0
+        while _listener_holding:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            _listener_released.wait(remaining)
+
+
+def _release_capture() -> None:
+    global _capture_users
+    with _capture_lock:
+        if _capture_users > 0:
+            _capture_users -= 1
+
+
+def capture_in_use() -> bool:
+    with _capture_lock:
+        return _capture_users > 0
+
+
+def listener_acquire_mic() -> bool:
+    """Wake listener claims the mic. False if a capturer owns it (capturer wins),
+    in which case the listener must stay paused."""
+    global _listener_holding
+    with _capture_lock:
+        if _capture_users > 0:
+            return False
+        _listener_holding = True
+        return True
+
+
+def listener_release_mic() -> None:
+    """Wake listener has closed its arecord; wake any capturer waiting to open."""
+    global _listener_holding
+    with _capture_lock:
+        _listener_holding = False
+        _listener_released.notify_all()
 
 
 # ---------------- playback ----------------
@@ -171,12 +232,14 @@ def _write_wav(path: str, frames: bytes, rate: int = TARGET_RATE) -> None:
 
 
 def _sim_wav() -> str:
-    fixture = os.environ.get("VISIONARY_SIM_WAV")
-    if fixture and os.path.exists(fixture):
-        return fixture
     fd, path = tempfile.mkstemp(suffix=".wav", prefix="visionary_sim_")
     os.close(fd)
-    _write_wav(path, b"\x00\x00" * TARGET_RATE)  # 1s of 16k mono silence
+    fixture = os.environ.get("VISIONARY_SIM_WAV")
+    if fixture and os.path.exists(fixture):
+        # Copy, never hand back the fixture itself: callers delete/move the wav.
+        shutil.copyfile(fixture, path)
+    else:
+        _write_wav(path, b"\x00\x00" * TARGET_RATE)  # 1s of 16k mono silence
     return path
 
 
@@ -275,24 +338,32 @@ class Recorder:
             return
         if SIM:
             self.recording = True
+            _acquire_capture()
             return
         rec_dir = os.path.join(state.HOME, "recordings")
         os.makedirs(rec_dir, exist_ok=True)
         # Raw (headerless) so a killed arecord can't leave a broken WAV header;
         # on the SD card, not /tmp, to spare RAM if /tmp is tmpfs.
         raw = os.path.join(rec_dir, ".rec_%d_%d.raw" % (os.getpid(), int(time.time())))
+        # Acquire before opening: the wake listener must release the single-opener
+        # I2S device before arecord can bind it (record_until_silence does the same).
+        _acquire_capture()
         try:
             self._proc = subprocess.Popen(
                 ["arecord", "-q", "-D", _capture_device(), "-f", "S32_LE",
                  "-r", str(CAPTURE_RATE), "-c", str(CAPTURE_CHANNELS),
                  "-t", "raw", raw])
         except OSError as exc:
+            _release_capture()
             raise RuntimeError("microphone unavailable: %s" % exc)
         self._raw_path = raw
         self.recording = True
 
     def stop(self) -> str:
+        was_recording = self.recording
         self.recording = False
+        if was_recording:
+            _release_capture()
         if SIM:
             return _sim_wav()
         proc, raw_path = self._proc, self._raw_path
@@ -316,6 +387,7 @@ def record_until_silence(max_s: float = 15.0, silence_s: float = 1.2) -> Optiona
     if SIM:
         return _sim_wav()
     chunk_bytes = _FRAME_BYTES * CAPTURE_RATE // 10  # 100ms
+    _acquire_capture()
     try:
         proc = subprocess.Popen(
             ["arecord", "-q", "-D", _capture_device(), "-f", "S32_LE",
@@ -323,6 +395,7 @@ def record_until_silence(max_s: float = 15.0, silence_s: float = 1.2) -> Optiona
             stdout=subprocess.PIPE)
     except OSError as exc:
         print("audio: arecord failed: %s" % exc, file=sys.stderr)
+        _release_capture()
         return None
     chunks = []
     heard = False
@@ -343,6 +416,7 @@ def record_until_silence(max_s: float = 15.0, silence_s: float = 1.2) -> Optiona
                     break
     finally:
         _stop_proc(proc)
+        _release_capture()
     if not heard:
         return None
     fd, raw_path = tempfile.mkstemp(suffix=".raw", prefix="visionary_utt_")

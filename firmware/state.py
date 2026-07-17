@@ -1,6 +1,11 @@
-"""Paths, config load/save, SQLite history, pairing token + QR.
+"""Paths, config load/save, SQLite history + phone-action queue, pairing token + QR.
 
 No hardware dependencies — safe to import anywhere, including SIM mode.
+
+The history DB is shared: memory.py adds its own tables (memory, memory_fts) to
+the same file. Every connection here is short-lived-transaction only (no
+exclusive locking) and sets busy_timeout so concurrent writers wait instead of
+raising "database is locked".
 """
 
 import json
@@ -10,7 +15,7 @@ import socket
 import sqlite3
 import threading
 import time
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 HOME = os.environ.get("VISIONARY_HOME", "/opt/visionary")
 
@@ -26,6 +31,8 @@ DEFAULT_CONFIG = {
     "two_way": {"enabled": False, "theirs": "es", "yours": "en"},
     "gestures": {"single": "read", "double": "describe", "triple": "recorder"},
     "features": {"ask": True, "recorder": True},
+    "wake_word": {"enabled": False, "model": "hey_jarvis"},
+    "navigation": {"enabled": False, "interval_s": 3.0},
 }
 
 
@@ -71,13 +78,20 @@ def save_config(cfg: dict) -> None:
     os.replace(tmp, CONFIG_PATH)
 
 
+def _connect(db_path: str) -> sqlite3.Connection:
+    # Shared across dispatcher threads (check_same_thread=False) under an
+    # external lock; busy_timeout lets writers from sibling connections
+    # (History, Actions, memory.py) queue instead of erroring.
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.execute("PRAGMA busy_timeout = 5000")
+    return conn
+
+
 class History:
     def __init__(self, db_path: str = DB_PATH) -> None:
         ensure_dirs()
         self._lock = threading.Lock()
-        # One shared connection guarded by the lock; sqlite's own
-        # same-thread check would reject use from dispatcher threads.
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn = _connect(db_path)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS entries ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -161,6 +175,85 @@ def get_history() -> History:
         if _history is None:
             _history = History()
         return _history
+
+
+class Actions:
+    """Tier 3 phone-action queue. Lives in the same history.db file.
+
+    Rows are queued by ask.py's phone_action tool handler (status="pending")
+    and drained by the paired iOS app via the local API, which marks each
+    done/failed once EventKit has executed it.
+    """
+
+    _VALID_STATUS = ("done", "failed")
+
+    def __init__(self, db_path: str = DB_PATH) -> None:
+        ensure_dirs()
+        self._lock = threading.Lock()
+        self._conn = _connect(db_path)
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS actions ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "ts REAL, type TEXT, payload TEXT, status TEXT, result TEXT)"
+        )
+        self._conn.commit()
+
+    def add(self, action_type: str, payload: Dict[str, str]) -> int:
+        payload_json = json.dumps({str(k): str(v) for k, v in payload.items()})
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO actions (ts, type, payload, status, result) "
+                "VALUES (?, ?, ?, 'pending', '')",
+                (time.time(), action_type, payload_json),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def list_pending(self) -> List[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, ts, type, payload, status, result "
+                "FROM actions WHERE status = 'pending' ORDER BY id ASC"
+            ).fetchall()
+        return [self._row_to_action(r) for r in rows]
+
+    def complete(self, action_id: int, status: str, result: str = "") -> bool:
+        if status not in self._VALID_STATUS:
+            raise ValueError("status must be one of {}".format(self._VALID_STATUS))
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE actions SET status = ?, result = ? WHERE id = ?",
+                (status, result, action_id),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    @staticmethod
+    def _row_to_action(row) -> dict:
+        try:
+            payload = json.loads(row[3]) if row[3] else {}
+        except ValueError:
+            payload = {}
+        return {
+            "id": row[0],
+            "ts": row[1],
+            "type": row[2],
+            "payload": payload,
+            "status": row[4],
+            "result": row[5] if row[5] is not None else "",
+        }
+
+
+_actions = None  # type: Optional[Actions]
+_actions_lock = threading.Lock()
+
+
+def get_actions() -> Actions:
+    global _actions
+    with _actions_lock:
+        if _actions is None:
+            _actions = Actions()
+        return _actions
 
 
 def get_token() -> str:

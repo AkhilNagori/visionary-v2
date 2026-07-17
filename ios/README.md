@@ -28,9 +28,11 @@ Pick your signing team under Signing & Capabilities, choose a simulator or devic
    - `NSCameraUsageDescription`: "The camera is used only to scan the pairing QR code shown by your Visionary glasses."
    - `NSLocalNetworkUsageDescription`: "Visionary talks directly to your glasses over the local network."
    - `NSBonjourServices`: array with one item, `_visionary._tcp`
+   - `NSCalendarsUsageDescription` and `NSCalendarsFullAccessUsageDescription`: "Visionary adds calendar events you ask the glasses to capture."
+   - `NSRemindersUsageDescription` and `NSRemindersFullAccessUsageDescription`: "Visionary creates reminders you ask the glasses to capture."
 5. Build and run.
 
-The Bonjour and local-network keys are required, not optional. Without them iOS silently blocks discovery and all LAN requests.
+The Bonjour and local-network keys are required, not optional. Without them iOS silently blocks discovery and all LAN requests. The calendar/reminder keys are required for agent actions; the `FullAccess` variants are what iOS 17+ reads.
 
 ## Pairing
 
@@ -50,6 +52,12 @@ Pairing is validated against the device's `/status` endpoint before it sticks, t
 
 ## Tabs
 
-Home (status plus remote Read/Describe triggers), History (everything the glasses read, with thumbnails), Live (MJPEG preview for lens focus and aiming practice), Recorder (transcripts and AI summaries of recordings), Settings (voice, speech rate, translation language, WiFi, updates).
+Home (status plus remote Read/Describe triggers), History (everything the glasses read, with thumbnails), Search (visual memory: "what room number was on that door?"), Live (MJPEG preview for lens focus and aiming practice), Recorder (transcripts and AI summaries of recordings), Settings (voice, speech rate, translation language, wake word, navigation assist, WiFi, updates).
 
 Battery shows a dash in v1: the PowerBoost Basic has no fuel gauge, so the API reports `null`.
+
+## Agent actions
+
+When the wearer says "hey Vision, add this flyer's date to my calendar", the glasses can't touch your calendar — they queue the action, and this app executes it. While the app is in the foreground it polls the glasses every 10 seconds, creates the event or reminder via EventKit, and reports the outcome back so the glasses can confirm out loud.
+
+iOS will ask for Calendar and Reminders permission the first time an action arrives. If you decline, actions are marked failed with "Calendar access denied" (the glasses speak the failure; nothing is retried silently) — grant access later in iOS Settings > Privacy & Security. Actions only run while the app is open; queued actions wait on the glasses until then.

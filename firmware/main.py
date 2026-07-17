@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Visionary firmware entrypoint: gesture engine, action dispatcher, UDS
-command server, and boot sequence. Hardware mode drives a GPIO button;
-SIM mode (VISIONARY_SIM=1) drives everything from a stdin REPL."""
+command server, boot sequence, and the Tier 3 background lifecycle.
+
+Hardware mode drives a GPIO button; SIM mode (VISIONARY_SIM=1) drives
+everything from a stdin REPL. A slow config watcher keeps the background
+threads (two-way interpreter, navigation assist, wake-word listener) in
+sync with config.json and opportunistically reindexes visual memory."""
 
 import base64
 import json
@@ -16,15 +20,19 @@ from typing import Callable, Optional, Tuple
 
 import audio
 import brain
+import memory
 import state
 import vision
-from modes import ask, describe, read, recorder, translate
+import wakeword
+from modes import ask, describe, navigate, read, recorder, translate
 
 SIM = os.environ.get("VISIONARY_SIM") == "1"
 BUTTON_PIN = 17
-TWO_WAY_POLL_S = 5.0
+CONFIG_POLL_S = 5.0
+REINDEX_INTERVAL_S = 60.0
 _BOOT_TS = time.monotonic()
-_server = None
+_server = None  # type: Optional["CommandServer"]
+_dispatcher = None  # type: Optional["Dispatcher"]
 
 
 class GestureEngine:
@@ -178,33 +186,164 @@ class GestureEngine:
             t.cancel()
 
 
+class LoopManager:
+    """A config-gated background loop: two-way translate or navigation assist.
+
+    The loop runs on a daemon thread while its config section's `enabled` flag
+    is set. reconcile() starts/stops it to match config. stop() is the single-
+    press stop: it signals the loop AND persists the flag off so the watcher
+    won't respawn it, with immediate audible feedback. shutdown() only signals
+    the loop (process teardown, no config write, no speech).
+    """
+
+    def __init__(self, config_key: str,
+                 target: Callable[[threading.Event], None],
+                 off_message: str, error_message: str) -> None:
+        self._key = config_key
+        self._target = target
+        self._off_message = off_message
+        self._error_message = error_message
+        self._lock = threading.Lock()
+        self._thread = None  # type: Optional[threading.Thread]
+        self._stop = None  # type: Optional[threading.Event]
+        self._shutdown = False  # process teardown: suppress auto-restart
+
+    def _enabled(self) -> bool:
+        return bool((state.load_config().get(self._key) or {}).get("enabled"))
+
+    def reconcile(self) -> None:
+        enabled = self._enabled()
+        with self._lock:
+            alive = self._thread is not None and self._thread.is_alive()
+            if enabled and not alive:
+                stop = threading.Event()
+                self._stop = stop
+                self._thread = threading.Thread(
+                    target=self._run, args=(stop,), daemon=True)
+                self._thread.start()
+            elif not enabled and alive and self._stop is not None:
+                self._stop.set()
+
+    def active(self) -> bool:
+        with self._lock:
+            return (self._thread is not None and self._thread.is_alive()
+                    and self._stop is not None and not self._stop.is_set())
+
+    def stop(self) -> None:
+        with self._lock:
+            if self._stop is not None:
+                self._stop.set()
+        # persist, or the watcher would respawn the loop within ~5s
+        self._persist_disable()
+        audio.beep("ok")
+        audio.speak(self._off_message)
+
+    def _persist_disable(self) -> None:
+        cfg = state.load_config()
+        section = cfg.get(self._key) or {}
+        if section.get("enabled"):
+            section["enabled"] = False
+            cfg[self._key] = section
+            state.save_config(cfg)
+
+    def shutdown(self) -> None:
+        with self._lock:
+            self._shutdown = True
+            if self._stop is not None:
+                self._stop.set()
+
+    def _run(self, stop: threading.Event) -> None:
+        try:
+            self._target(stop)
+        except brain.BrainOffline:
+            # the loop hit a hard offline wall and already spoke; clear the config
+            # flag so the ~5s watcher won't immediately respawn it into a thrash.
+            self._persist_disable()
+        except Exception:
+            # daemon-thread top level: a crash must never be silent
+            audio.beep("err")
+            audio.speak(self._error_message)
+        finally:
+            restart = False
+            with self._lock:
+                if self._thread is threading.current_thread():
+                    self._thread = None
+                    self._stop = None
+                    # a fast off->on toggle can re-enable us while we were still
+                    # draining; come straight back up rather than stranding config
+                    # enabled with no live thread until the next watcher poll.
+                    restart = not self._shutdown and self._enabled()
+            if restart:
+                self.reconcile()
+
+
+class WakeWordManager:
+    """Reconciles the openWakeWord listener with config wake_word.enabled."""
+
+    def __init__(self, on_wake: Callable[[], None]) -> None:
+        self._on_wake = on_wake
+        self._lock = threading.Lock()
+        self._started = False
+
+    def reconcile(self) -> None:
+        enabled = bool((state.load_config().get("wake_word") or {}).get("enabled"))
+        with self._lock:
+            if enabled and not self._started:
+                self._started = wakeword.start(self._on_wake)
+            elif not enabled and self._started:
+                wakeword.stop()
+                self._started = False
+
+    def stop(self) -> None:
+        with self._lock:
+            if self._started:
+                wakeword.stop()
+                self._started = False
+
+
 class Dispatcher:
-    """Routes gestures and UDS captures to mode actions on daemon threads."""
+    """Routes gestures and UDS captures to mode actions on daemon threads and
+    owns the Tier 3 background lifecycle (loops, wake word, memory reindex)."""
 
     def __init__(self) -> None:
         self.busy = threading.Lock()
         self._hold_active = False
-        self._two_way_lock = threading.Lock()
-        self._two_way_thread = None  # type: Optional[threading.Thread]
-        self._two_way_stop = None  # type: Optional[threading.Event]
+        self._translate = LoopManager(
+            "two_way", translate.run_two_way,
+            "Interpreter off.", "The interpreter stopped.")
+        self._navigate = LoopManager(
+            "navigation", navigate.run_navigation,
+            "Navigation assist off.", "Navigation assist stopped.")
+        self._loops = [self._translate, self._navigate]
+        self._wake = WakeWordManager(self._on_wake)
+        self._watch_stop = threading.Event()
+        self._watch_thread = None  # type: Optional[threading.Thread]
+        self._last_reindex = 0.0
 
     # -- gesture entry points -------------------------------------------
 
     def gesture(self, kind: str) -> None:
-        two_way_was_active = self._two_way_active()
-        self.sync_two_way()
+        active_before = self._any_loop_active()
+        self.reconcile()
+        active_after = self._any_loop_active()
+
         cfg = state.load_config()
         mode = (cfg.get("gestures") or {}).get(kind)
+
+        # recorder-stop is honored even while an action holds the busy lock
         if recorder.is_recording():
             if mode == "recorder":
                 self._spawn(recorder.toggle, blocking=True)
             return
-        if two_way_was_active and self._two_way_active():
-            if kind == "single":
-                self.stop_two_way()
+
+        # a single press stops an active background loop instead of reading
+        if kind == "single" and active_before and active_after:
+            self.stop_active_loops()
             return
+
         if self.busy.locked() or not mode:
             return
+
         feats = cfg.get("features") or {}
         if mode == "read":
             self._spawn(read.run_read)
@@ -221,8 +360,8 @@ class Dispatcher:
             audio.speak("That gesture is not set up.")
 
     def hold_start(self) -> None:
-        self.sync_two_way()
-        if recorder.is_recording() or self._two_way_active():
+        self.reconcile()
+        if recorder.is_recording() or self._any_loop_active():
             return
         cfg = state.load_config()
         if not (cfg.get("features") or {}).get("ask", True):
@@ -263,11 +402,12 @@ class Dispatcher:
     # -- UDS capture entry point ----------------------------------------
 
     def capture(self, mode: str) -> Tuple[bool, Optional[str]]:
-        self.sync_two_way()
+        self.reconcile()
         if mode == "recorder" and recorder.is_recording():
             self._spawn(recorder.toggle, blocking=True)
             return True, None
-        if recorder.is_recording() or self._two_way_active() or self.busy.locked():
+        if (recorder.is_recording() or self._any_loop_active()
+                or self.busy.locked()):
             return False, "busy"
         feats = state.load_config().get("features") or {}
         if mode == "recorder":
@@ -289,46 +429,63 @@ class Dispatcher:
             "recording": recorder.is_recording(),
         }
 
-    # -- two-way translate lifecycle -------------------------------------
+    # -- Tier 3 background lifecycle -------------------------------------
 
-    def sync_two_way(self) -> None:
-        enabled = bool((state.load_config().get("two_way") or {}).get("enabled"))
-        with self._two_way_lock:
-            alive = self._two_way_thread is not None and self._two_way_thread.is_alive()
-            if enabled and not alive:
-                stop = threading.Event()
-                self._two_way_stop = stop
-                self._two_way_thread = threading.Thread(
-                    target=self._two_way_worker, args=(stop,), daemon=True)
-                self._two_way_thread.start()
-            elif not enabled and alive and self._two_way_stop is not None:
-                self._two_way_stop.set()
+    def reconcile(self) -> None:
+        """Bring background threads in line with config. Idempotent; called on
+        every dispatch and by the ~5s watcher."""
+        for loop in self._loops:
+            loop.reconcile()
+        self._wake.reconcile()
 
-    def stop_two_way(self) -> None:
-        with self._two_way_lock:
-            if self._two_way_stop is not None:
-                self._two_way_stop.set()
-        # persist, or the poll would respawn the loop within ~5s
-        cfg = state.load_config()
-        if (cfg.get("two_way") or {}).get("enabled"):
-            cfg["two_way"]["enabled"] = False
-            state.save_config(cfg)
-        audio.beep("ok")
-        audio.speak("Interpreter off.")
+    def start_watcher(self) -> None:
+        self._watch_thread = threading.Thread(target=self._watch, daemon=True)
+        self._watch_thread.start()
 
-    def _two_way_active(self) -> bool:
-        with self._two_way_lock:
-            return (self._two_way_thread is not None
-                    and self._two_way_thread.is_alive()
-                    and self._two_way_stop is not None
-                    and not self._two_way_stop.is_set())
+    def cleanup(self) -> None:
+        self._watch_stop.set()
+        self._wake.stop()
+        for loop in self._loops:
+            loop.shutdown()
 
-    def _two_way_worker(self, stop: threading.Event) -> None:
+    def stop_active_loops(self) -> None:
+        for loop in self._loops:
+            if loop.active():
+                loop.stop()
+
+    def _any_loop_active(self) -> bool:
+        return any(loop.active() for loop in self._loops)
+
+    def _watch(self) -> None:
+        while not self._watch_stop.wait(CONFIG_POLL_S):
+            try:
+                self.reconcile()
+            except Exception as e:
+                print("config watch error: %s" % e, file=sys.stderr)
+            self._maybe_reindex()
+
+    def _maybe_reindex(self) -> None:
+        now = time.monotonic()
+        if now - self._last_reindex < REINDEX_INTERVAL_S:
+            return
         try:
-            translate.run_two_way(stop)
+            if brain.is_online():
+                memory.reindex_pending()
+                self._last_reindex = now
+        except Exception:
+            pass
+
+    def _on_wake(self) -> None:
+        # busy-respecting wrapper: run the wake-triggered ask only when idle
+        if not self.busy.acquire(False):
+            return
+        try:
+            ask.ask_from_wake()
         except Exception:
             audio.beep("err")
-            audio.speak("The interpreter stopped.")
+            audio.speak("Something went wrong.")
+        finally:
+            self.busy.release()
 
     # -- internals --------------------------------------------------------
 
@@ -441,6 +598,7 @@ def boot(dispatcher: Dispatcher) -> CommandServer:
     first_boot = not os.path.exists(os.path.join(state.HOME, "token"))
     token = state.get_token()
     if first_boot:
+        # comma-join spells the six digits out one at a time
         audio.speak("Welcome to Visionary. Your pairing code is %s."
                     % ", ".join(token), wait=True)
     try:
@@ -451,30 +609,27 @@ def boot(dispatcher: Dispatcher) -> CommandServer:
         raise
     server = CommandServer(dispatcher)
     server.start()
-    dispatcher.sync_two_way()
-    threading.Thread(target=_two_way_poll, args=(dispatcher,), daemon=True).start()
+    dispatcher.reconcile()
+    dispatcher.start_watcher()
     audio.speak("Visionary ready."
                 + ("" if brain.is_online() else " Offline mode."), wait=True)
     return server
 
 
-def _two_way_poll(dispatcher: Dispatcher) -> None:
-    while True:
-        time.sleep(TWO_WAY_POLL_S)
-        try:
-            dispatcher.sync_two_way()
-        except Exception as e:
-            print("two-way poll error: %s" % e, file=sys.stderr)
-
-
 def safe_shutdown() -> None:
     audio.speak("Shutting down. Goodbye.", wait=True)
-    if _server is not None:
-        _server.close()
+    _cleanup()
     if SIM:
         print("[sim] sudo shutdown -h now")
     else:
         subprocess.run(["sudo", "shutdown", "-h", "now"], check=False)
+
+
+def _cleanup() -> None:
+    if _dispatcher is not None:
+        _dispatcher.cleanup()
+    if _server is not None:
+        _server.close()
 
 
 def run_hardware(engine: GestureEngine) -> None:
@@ -514,8 +669,9 @@ def run_sim(dispatcher: Dispatcher) -> None:
 
 
 def main() -> None:
-    global _server
+    global _server, _dispatcher
     dispatcher = Dispatcher()
+    _dispatcher = dispatcher
     engine = GestureEngine(
         on_single=lambda: dispatcher.gesture("single"),
         on_double=lambda: dispatcher.gesture("double"),
@@ -527,8 +683,7 @@ def main() -> None:
     _server = boot(dispatcher)
 
     def _on_sigterm(signum, frame):
-        if _server is not None:
-            _server.close()
+        _cleanup()
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _on_sigterm)
@@ -538,7 +693,7 @@ def main() -> None:
         else:
             run_hardware(engine)
     finally:
-        _server.close()
+        _cleanup()
 
 
 if __name__ == "__main__":

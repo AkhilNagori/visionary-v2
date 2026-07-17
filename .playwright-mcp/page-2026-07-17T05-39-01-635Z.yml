@@ -1,0 +1,603 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e3]:
+    - link "Skip to content" [ref=e4]:
+      - /url: "#main"
+    - banner [ref=e5]:
+      - navigation "Primary" [ref=e6]:
+        - generic [ref=e8]:
+          - generic [ref=e9]:
+            - button "Open menu" [ref=e10]
+            - generic [ref=e12]:
+              - link "How it works" [ref=e13]:
+                - /url: "#product-system"
+              - link "Features" [ref=e743]:
+                - /url: "#everything"
+          - link "Visionary home" [ref=e569]:
+            - /url: "#top"
+          - generic [ref=e15]:
+            - generic [ref=e16]:
+              - link "Technology" [ref=e744]:
+                - /url: "#hardware"
+              - link "Founder Kit" [ref=e18]:
+                - /url: "#kit"
+              - link "Contact" [ref=e19]:
+                - /url: mailto:visionaries@akhilnagori.xyz
+            - link "Preorder · $99" [ref=e20]:
+              - /url: mailto:visionaries@akhilnagori.xyz?subject=Founder%20Kit%20preorder
+    - main [ref=e21]:
+      - generic [ref=e23]:
+        - generic "Visionary glasses hero film" [ref=e25]
+        - generic [ref=e27]:
+          - heading [level=1] [ref=e28]:
+            - generic "AI glasses that read" [ref=e29]:
+              - generic [ref=e30]: AI
+              - generic [ref=e31]: glasses
+              - generic [ref=e32]: that
+              - generic [ref=e33]: read
+            - generic "the world aloud." [ref=e34]:
+              - generic [ref=e35]: the
+              - generic [ref=e36]: world
+              - generic [ref=e37]: aloud.
+          - generic [ref=e38]:
+            - paragraph [ref=e39]: $60 in parts · Open source · Works offline
+            - link "Reserve a Founder Kit · $99" [ref=e40]:
+              - /url: mailto:visionaries@akhilnagori.xyz?subject=Founder%20Kit%20preorder
+        - link [ref=e42]:
+          - /url: "#product-system"
+      - generic [ref=e48]:
+        - heading "One button, four gestures" [level=2] [ref=e49]:
+          - generic [ref=e50]: One
+          - generic [ref=e51]: button,
+          - generic [ref=e52]: four
+          - generic [ref=e53]: gestures
+        - generic [ref=e59]:
+          - button "Press once" [ref=e60]
+          - button "Press twice" [ref=e68]
+          - button "Hold & talk" [ref=e74]
+          - button "No internet" [pressed] [ref=e80]
+        - paragraph [ref=e746]:
+          - generic [ref=e747]: It
+          - generic [ref=e748]: still
+          - generic [ref=e749]: reads.
+          - generic [ref=e750]: A
+          - generic [ref=e751]: fully
+          - generic [ref=e752]: offline
+          - generic [ref=e753]: OCR
+          - generic [ref=e754]: and
+          - generic [ref=e755]: speech
+          - generic [ref=e756]: pipeline
+          - generic [ref=e757]: takes
+          - generic [ref=e758]: over
+          - generic [ref=e759]: automatically.
+          - generic [ref=e760]: A
+          - generic [ref=e761]: short
+          - generic [ref=e762]: chirp
+          - generic [ref=e763]: is
+          - generic [ref=e764]: the
+          - generic [ref=e765]: only
+          - generic [ref=e766]: difference
+          - generic [ref=e767]: you
+          - generic [ref=e768]: hear.
+        - generic [ref=e111]:
+          - button "Show Press once" [ref=e112]: "1"
+          - button "Show Press twice" [ref=e113]: "2"
+          - button "Show Hold & talk" [ref=e114]: "3"
+          - button "Show No internet" [ref=e115]: "4"
+      - region "Use cases" [ref=e116]:
+        - generic [ref=e117]:
+          - 'img "Classroom footage: an open textbook page in view" [ref=e769]'
+          - generic [ref=e770]:
+            - paragraph [ref=e771]: Single press · beep
+            - paragraph [ref=e772]: "Speaking: “Part A. Solve for x.”"
+            - generic [ref=e773]:
+              - generic [ref=e774]: Worksheets
+              - generic [ref=e775]: Handwriting
+              - generic [ref=e776]: Reading order
+          - heading "Press once. It reads." [level=2] [ref=e777]:
+            - generic [ref=e778]: Press
+            - generic [ref=e779]: once.
+            - generic [ref=e780]: It
+            - generic [ref=e781]: reads.
+          - generic [ref=e140]:
+            - button "Show Press once. It reads." [ref=e141]: "1"
+            - button "Show Press twice. It describes." [ref=e142]: "2"
+            - button "Show Hold and ask anything." [ref=e143]: "3"
+            - button "Show No internet? Still reads." [ref=e144]: "4"
+      - region "Everything Visionary does" [ref=e782]:
+        - generic [ref=e783]:
+          - heading "Everything it does" [level=2] [ref=e784]:
+            - generic [ref=e785]: Everything
+            - generic [ref=e786]: it
+            - generic [ref=e787]: does
+          - paragraph [ref=e788]: "The four gestures are the interface. These thirty modes are what they unlock: the same camera, mic, and speaker, pointed at different problems."
+          - generic [ref=e789]:
+            - generic [ref=e790]:
+              - generic [ref=e791]:
+                - heading "Reading superpowers" [level=3] [ref=e793]
+                - generic [ref=e794]:
+                  - generic [ref=e795]: 01–07
+                  - generic [ref=e796]: In the kit
+              - generic [ref=e798]:
+                - generic [ref=e800]:
+                  - generic [ref=e801]: "01"
+                  - heading "Read anything" [level=4] [ref=e802]
+                  - paragraph [ref=e803]: Worksheets, textbooks, menus, signs, pill bottles. The core, in a natural voice, in reading order.
+                - generic [ref=e805]:
+                  - generic [ref=e806]: "02"
+                  - heading "Skim mode" [level=4] [ref=e807]
+                  - paragraph [ref=e808]: “Just tell me the homework.” The total, the dosage, the one line you need, not the whole page.
+                - generic [ref=e810]:
+                  - generic [ref=e811]: "03"
+                  - heading "Explain mode" [level=4] [ref=e812]
+                  - paragraph [ref=e813]: Reads it, then explains it like you're 10. Or like you're a PhD. Your call.
+                - generic [ref=e815]:
+                  - generic [ref=e816]: "04"
+                  - heading "Math mode" [level=4] [ref=e817]
+                  - paragraph [ref=e818]: Reads equations aloud properly (“x squared over two”) and can walk you through solving them.
+                - generic [ref=e820]:
+                  - generic [ref=e821]: "05"
+                  - heading "Quiz me" [level=4] [ref=e822]
+                  - paragraph [ref=e823]: Reads a page, then quizzes you on it. Studying without sight.
+                - generic [ref=e825]:
+                  - generic [ref=e826]: "06"
+                  - heading "Form assistant" [level=4] [ref=e827]
+                  - paragraph [ref=e828]: Reads a form field by field, so you can dictate the answers.
+                - generic [ref=e830]:
+                  - generic [ref=e831]: "07"
+                  - heading "Handwriting decoder" [level=4] [ref=e832]
+                  - paragraph [ref=e833]: Including the doctor's note nobody can read.
+            - generic [ref=e834]:
+              - generic [ref=e835]:
+                - heading "World understanding" [level=3] [ref=e837]
+                - generic [ref=e838]:
+                  - generic [ref=e839]: 08–15
+                  - generic [ref=e840]: In the kit
+              - generic [ref=e842]:
+                - generic [ref=e844]:
+                  - generic [ref=e845]: "08"
+                  - heading "Scene description" [level=4] [ref=e846]
+                  - paragraph [ref=e847]: "The classic: objects, people, layout, visible text, framed from your point of view."
+                - generic [ref=e849]:
+                  - generic [ref=e850]: "09"
+                  - heading "Pokédex mode" [level=4] [ref=e851]
+                  - paragraph [ref=e852]: "Point at any plant, bird, bug, car, or sneaker: species, model, fun fact."
+                - generic [ref=e854]:
+                  - generic [ref=e855]: "10"
+                  - heading "Sommelier mode" [level=4] [ref=e856]
+                  - paragraph [ref=e857]: Reads the wine list or the menu and tells you what to pick, and why.
+                - generic [ref=e859]:
+                  - generic [ref=e860]: "11"
+                  - heading "Currency & color ID" [level=4] [ref=e861]
+                  - paragraph [ref=e862]: “Twenty dollars.” “That shirt is navy, and it matches your pants.”
+                - generic [ref=e864]:
+                  - generic [ref=e865]: "12"
+                  - heading "Expiry-date hunter" [level=4] [ref=e866]
+                  - paragraph [ref=e867]: “Find the date on this carton.” Genuinely hard with low vision. Trivial now.
+                - generic [ref=e869]:
+                  - generic [ref=e870]: "13"
+                  - heading "Ingredient & calorie lens" [level=4] [ref=e871]
+                  - paragraph [ref=e872]: "Allergy checks on any label: “safe, no peanuts.” Calories too."
+                - generic [ref=e874]:
+                  - generic [ref=e875]: "14"
+                  - heading "Tour guide mode" [level=4] [ref=e876]
+                  - paragraph [ref=e877]: Look at a landmark, hear its story.
+                - generic [ref=e879]:
+                  - generic [ref=e880]: "15"
+                  - heading "Board game reader" [level=4] [ref=e881]
+                  - paragraph [ref=e882]: Reads the chess board aloud. Will even suggest a move.
+            - generic [ref=e883]:
+              - generic [ref=e884]:
+                - heading "Voice & sound" [level=3] [ref=e886]
+                - generic [ref=e887]:
+                  - generic [ref=e888]: 16–21
+                  - generic [ref=e889]: In the kit
+              - generic [ref=e891]:
+                - generic [ref=e893]:
+                  - generic [ref=e894]: "16"
+                  - heading "Ask anything about what you see" [level=4] [ref=e895]
+                  - paragraph [ref=e896]: Hold the button and talk. Your question plus a photo of what you're facing, answered aloud.
+                - generic [ref=e898]:
+                  - generic [ref=e899]: "17"
+                  - heading "Voice assistant with memory" [level=4] [ref=e900]
+                  - paragraph [ref=e901]: General questions, and it remembers the conversation. “What did I just ask?” works.
+                - generic [ref=e903]:
+                  - generic [ref=e904]: "18"
+                  - heading "Lecture recorder" [level=4] [ref=e905]
+                  - paragraph [ref=e906]: Triple press to record. You get the audio, a transcript, and an AI summary, saved to history.
+                - generic [ref=e908]:
+                  - generic [ref=e909]: "19"
+                  - heading "Live interpreter" [level=4] [ref=e910]
+                  - paragraph [ref=e911]: "Two-way conversation translation: their Spanish in your ear, your English out loud."
+                - generic [ref=e913]:
+                  - generic [ref=e914]: "20"
+                  - heading "Live captions" [level=4] [ref=e915]
+                  - paragraph [ref=e916]: "The pipeline inverted: the mic transcribes speech around you in near real time. Built for blind users, this one serves deaf users. One device, two disabilities."
+                - generic [ref=e918]:
+                  - generic [ref=e919]: "21"
+                  - heading "“Call my name”" [level=4] [ref=e920]
+                  - paragraph [ref=e921]: Opt-in ambient listening that stays silent until your name is said, then pings you.
+            - generic [ref=e922]:
+              - generic [ref=e923]:
+                - heading "Memory" [level=3] [ref=e925]
+                - generic [ref=e926]: (the sci-fi tier)
+                - generic [ref=e927]:
+                  - generic [ref=e928]: 22–25
+                  - generic [ref=e929]: v2 roadmap
+              - generic [ref=e931]:
+                - generic [ref=e933]:
+                  - generic [ref=e934]: "22"
+                  - heading "Photographic memory" [level=4] [ref=e935]
+                  - paragraph [ref=e936]: “What did that poster say an hour ago?” Every capture becomes searchable.
+                - generic [ref=e938]:
+                  - generic [ref=e939]: "23"
+                  - heading "“Where are my keys?”" [level=4] [ref=e940]
+                  - paragraph [ref=e941]: Last-seen recall from your capture history.
+                - generic [ref=e943]:
+                  - generic [ref=e944]: "24"
+                  - heading "Name-tag memory" [level=4] [ref=e945]
+                  - paragraph [ref=e946]: "Reads conference badges, then reminds you who's who: “that's Sarah, you met her at the pizza booth.”"
+                - generic [ref=e948]:
+                  - generic [ref=e949]: "25"
+                  - heading "Auto-flashcards" [level=4] [ref=e950]
+                  - paragraph [ref=e951]: Everything you read today becomes a spaced-repetition deck tonight.
+            - generic [ref=e952]:
+              - generic [ref=e953]:
+                - heading "Agent tier" [level=3] [ref=e955]
+                - generic [ref=e956]: (see it, say it, done)
+                - generic [ref=e957]:
+                  - generic [ref=e958]: 26–28
+                  - generic [ref=e959]: v2 roadmap
+              - generic [ref=e961]:
+                - generic [ref=e963]:
+                  - generic [ref=e964]: "26"
+                  - heading "Seen → done" [level=4] [ref=e965]
+                  - paragraph [ref=e966]: “Add this flyer to my calendar.” “Buy this book.” “Text this address to mom.” Look at it, say it, done.
+                - generic [ref=e968]:
+                  - generic [ref=e969]: "27"
+                  - heading "Whiteboard → email" [level=4] [ref=e970]
+                  - paragraph [ref=e971]: Snap the board; the notes arrive formatted in your inbox.
+                - generic [ref=e973]:
+                  - generic [ref=e974]: "28"
+                  - heading "Receipt splitter" [level=4] [ref=e975]
+                  - paragraph [ref=e976]: "Look at the bill: “we're four people, and Alex didn't drink.”"
+            - generic [ref=e977]:
+              - generic [ref=e978]:
+                - heading "Platform" [level=3] [ref=e980]
+                - generic [ref=e981]: (the community play)
+                - generic [ref=e982]:
+                  - generic [ref=e983]: 29–30
+                  - generic [ref=e984]: v2 roadmap
+              - generic [ref=e986]:
+                - generic [ref=e988]:
+                  - generic [ref=e989]: "29"
+                  - heading "Prompt packs" [level=4] [ref=e990]
+                  - paragraph [ref=e991]: "Community-made modes you install like apps: a birding pack, a mechanic pack, a D&D pack. This is what open source buys you: the community builds the modes we haven't thought of yet."
+                - generic [ref=e993]:
+                  - generic [ref=e994]: "30"
+                  - heading "The v2 spine" [level=4] [ref=e995]
+                  - paragraph [ref=e996]: Wake word (“hey Vision”), the iOS companion app, and classroom fleet tools. The base every mode above runs on.
+      - region "Exploded 3D hardware showcase" [ref=e997]:
+        - generic [ref=e999]:
+          - generic: Loading hardware · 100%
+          - generic:
+            - generic:
+              - heading "Every component, in the open" [level=2]:
+                - generic: Every
+                - generic: component,
+                - generic: in
+                - generic: the
+                - generic: open
+          - generic:
+            - generic: Scroll
+            - generic:
+              - generic "Interact with the 3D glasses"
+              - generic: INTERACT
+      - region "How Visionary compares" [ref=e1002]:
+        - generic [ref=e1003]:
+          - heading "Why it wins" [level=2] [ref=e1004]:
+            - generic [ref=e1005]: Why
+            - generic [ref=e1006]: it
+            - generic [ref=e1007]: wins
+          - paragraph [ref=e1008]: The devices that do this today cost as much as a used car. The gadgets that cost less can't see your point of view, and they stop working when the WiFi does.
+          - table [ref=e1010]:
+            - rowgroup [ref=e1011]:
+              - row [ref=e1012]:
+                - columnheader "Criterion" [ref=e1013]
+                - columnheader "Visionary" [ref=e1015]
+                - columnheader "OrCam MyEye" [ref=e1016]
+                - columnheader "Rabbit R1" [ref=e1017]
+                - columnheader "Phone apps" [ref=e1018]
+            - rowgroup [ref=e1019]:
+              - row [ref=e1020]:
+                - rowheader "Price" [ref=e1021]
+                - cell "$99 kit · $60 in parts" [ref=e1022]
+                - cell "$2,000–4,000" [ref=e1023]
+                - cell "$199" [ref=e1024]
+                - cell "“Free” + a $1k phone" [ref=e1025]
+              - row [ref=e1026]:
+                - rowheader "Hands-free, sees your view" [ref=e1027]
+                - cell [ref=e1028]
+                - cell [ref=e1032]
+                - cell [ref=e1036]
+                - cell [ref=e1039]
+              - row [ref=e1042]:
+                - rowheader "Works offline" [ref=e1043]
+                - cell [ref=e1044]
+                - cell "Partially" [ref=e1048]
+                - cell [ref=e1049]
+                - cell "Some apps" [ref=e1052]
+              - row [ref=e1053]:
+                - rowheader "Open source & repairable" [ref=e1054]
+                - cell [ref=e1055]
+                - cell [ref=e1059]
+                - cell [ref=e1062]
+                - cell [ref=e1065]
+              - row [ref=e1068]:
+                - rowheader "Built for classrooms" [ref=e1069]
+                - cell [ref=e1070]
+                - cell "Clinical market" [ref=e1074]
+                - cell [ref=e1075]
+                - cell [ref=e1078]
+          - paragraph [ref=e1081]: "The honest trade: we don't have their industrial design or certifications yet. What you get instead is a 30 to 60 times price advantage and a platform you can open, fix, and extend. For schools and makers, that's exactly the right trade."
+      - region "Founder Kit pricing and roadmap" [ref=e1082]:
+        - generic [ref=e1083]:
+          - heading "The Founder Kit" [level=2] [ref=e1084]:
+            - generic [ref=e1085]: The
+            - generic [ref=e1086]: Founder
+            - generic [ref=e1087]: Kit
+          - paragraph [ref=e1088]: The first run is 30 units. Every kit includes the hardware, the printed frame, a preloaded SD card, and the complete build documentation. Preorders ship within 6 weeks.
+          - generic [ref=e1090]:
+            - generic [ref=e1092]:
+              - heading "Solder it yourself" [level=3] [ref=e1094]
+              - paragraph [ref=e1095]: $79
+              - paragraph [ref=e1096]: Every part, the printed frame, and a preloaded SD card. You bring the iron and an afternoon.
+              - link "Reserve yours" [ref=e1097]:
+                - /url: mailto:visionaries@akhilnagori.xyz?subject=Founder%20Kit%20preorder
+            - generic [ref=e1102]:
+              - generic [ref=e1103]:
+                - heading "Founder Kit" [level=3] [ref=e1104]
+                - generic [ref=e1105]: 30 units
+              - paragraph [ref=e1106]: $99
+              - paragraph [ref=e1107]: "The standard kit: printed frame, all electronics, preloaded SD card, and the docs that got us this far."
+              - link "Reserve yours" [ref=e1108]:
+                - /url: mailto:visionaries@akhilnagori.xyz?subject=Founder%20Kit%20preorder
+            - generic [ref=e1113]:
+              - heading "Assembled" [level=3] [ref=e1115]
+              - paragraph [ref=e1116]: $149
+              - paragraph [ref=e1117]: Hand-built and tested. Charge it, put it on, press the button.
+              - link "Reserve yours" [ref=e1118]:
+                - /url: mailto:visionaries@akhilnagori.xyz?subject=Founder%20Kit%20preorder
+          - generic [ref=e1122]:
+            - heading "Where it's going" [level=3] [ref=e1123]
+            - list [ref=e1124]:
+              - listitem [ref=e1125]:
+                - generic [ref=e1127]:
+                  - paragraph [ref=e1128]: Now
+                  - heading "v1 · Founder Kit" [level=4] [ref=e1129]
+                  - paragraph [ref=e1130]: "30 hand-assembled or self-solder kits: printed frame, preloaded SD card, full docs. Ships within 6 weeks."
+              - listitem [ref=e1131]:
+                - generic [ref=e1133]:
+                  - paragraph [ref=e1134]: +3 months
+                  - heading "v2 · Integrated frame" [level=4] [ref=e1135]
+                  - paragraph [ref=e1136]: In-temple mic, battery and a custom thin PCB, plus an iOS companion app, a wake word, and visual memory search.
+              - listitem [ref=e1137]:
+                - generic [ref=e1139]:
+                  - paragraph [ref=e1140]: +6 to 12 months
+                  - heading "Classroom Edition" [level=4] [ref=e1141]
+                  - paragraph [ref=e1142]: Class sets of 10 with a teacher dashboard, district pilot programs, and grant-funded distribution.
+          - paragraph [ref=e1148]: Privacy, in one breath. Capture happens only when you press the button. No continuous recording, no accounts, no cloud storage. History stays on the device, and the code is public so you can check.
+      - region "Recognition" [ref=e1149]:
+        - heading "Recognized by" [level=2] [ref=e1152]:
+          - generic [ref=e1153]: Recognized
+          - generic [ref=e1154]: by
+        - generic [ref=e1157]:
+          - list "Recognized by" [ref=e1158]:
+            - img "Business Insider" [ref=e1159]
+            - img "AOL" [ref=e1160]
+            - img "Yahoo Finance" [ref=e1161]
+            - img "Hackaday" [ref=e1162]
+            - img "Hackster.io" [ref=e1163]
+            - img "The Silicon Valley Voice" [ref=e1164]
+            - img "Maeil Business Newspaper" [ref=e1166]
+            - img "Thermo Fisher Scientific" [ref=e1167]
+            - img "Broadcom" [ref=e1168]
+            - img "Synopsys" [ref=e1169]
+            - img "Lemelson-MIT" [ref=e1170]
+            - img "IEEE" [ref=e1171]
+            - img "Society for Science" [ref=e1172]
+            - img "NSTA" [ref=e1173]
+            - img "AEOP" [ref=e1174]
+          - list [ref=e1175]:
+            - listitem [ref=e1176]
+            - listitem [ref=e1177]
+            - listitem [ref=e1178]
+            - listitem [ref=e1179]
+            - listitem [ref=e1180]
+            - listitem [ref=e1181]:
+              - generic [ref=e1182]: The Silicon Valley Voice
+            - listitem [ref=e1183]
+            - listitem [ref=e1184]
+            - listitem [ref=e1185]
+            - listitem [ref=e1186]
+            - listitem [ref=e1187]
+            - listitem [ref=e1188]
+            - listitem [ref=e1189]
+            - listitem [ref=e1190]
+            - listitem [ref=e1191]
+      - generic [ref=e1193]:
+        - heading "Visionary, up close" [level=2] [ref=e1195]:
+          - generic [ref=e1196]: Visionary,
+          - generic [ref=e1197]: up
+          - generic [ref=e1198]: close
+        - group "Scrollable Visionary prototype gallery" [ref=e1201]:
+          - button "Speaking at the awards ceremony" [ref=e1203]:
+            - generic [ref=e1204]:
+              - generic:
+                - generic:
+                  - generic: 01 / 11
+                  - generic: Speaking at the awards ceremony
+          - button "Visionary prototype, front angle" [ref=e1207]
+          - button "Award backdrop portrait" [ref=e1211]
+          - button "Public day at the fair" [ref=e1215]
+          - button "Prototype build process" [ref=e1219]
+          - button "Reading with Visionary" [ref=e1223]
+          - button "Demonstrating the prototype" [ref=e1227]
+          - button "Junior Innovators Challenge finalists" [ref=e1231]
+          - button "Award on stage" [ref=e1235]
+          - button "Wearing the prototype" [ref=e1239]
+          - button "Team at the Junior Innovators Challenge" [ref=e1243]
+      - generic [ref=e1248]:
+        - generic [ref=e1249]:
+          - heading "FAQ" [level=2] [ref=e1250]
+          - generic [ref=e1252]:
+            - button "What it does" [pressed] [ref=e1253]
+            - button "Founder Kit & pricing" [ref=e1255]
+            - button "Privacy & safety" [ref=e1256]
+            - button "Classrooms & roadmap" [ref=e1257]
+        - generic [ref=e1258]:
+          - list [ref=e1260]:
+            - listitem [ref=e1261]:
+              - button "What is Visionary?" [expanded] [ref=e1262]
+              - paragraph [ref=e1267]: Visionary is a pair of 3D-printed AI smart glasses with one button. Press once and it reads whatever you're facing aloud in a natural voice. Press twice and it describes the scene. Hold the button and talk to ask about what you see. It's built for visually impaired students, costs about $60 in parts, and the whole thing is open source.
+            - listitem [ref=e1268]:
+              - button "What can it read?" [ref=e1269]
+            - listitem [ref=e1273]:
+              - button "What else can it do besides read?" [ref=e1274]
+            - listitem [ref=e1278]:
+              - button "Does it work without internet?" [ref=e1279]
+            - listitem [ref=e1283]:
+              - button "How fast is it?" [ref=e1284]
+            - listitem [ref=e1288]:
+              - button "Can it translate?" [ref=e1289]
+          - generic [ref=e1294]:
+            - generic [ref=e1295]: Still have questions?
+            - link "Contact us" [ref=e1296]:
+              - /url: mailto:visionaries@akhilnagori.xyz
+      - generic [ref=e1300]:
+        - heading "In the news" [level=2] [ref=e1302]:
+          - generic [ref=e1303]: In
+          - generic [ref=e1304]: the
+          - generic [ref=e1305]: news
+        - generic [ref=e1306]:
+          - generic [ref=e1307]:
+            - 'link "AOL: Silicon Valley is raising billions to develop wearable AI products. These 15-year-olds built theirs for under $100. (opens in a new tab)" [ref=e1309]':
+              - /url: https://www.aol.com/articles/silicon-valley-raising-billions-develop-101401018.html
+              - generic [ref=e1310]:
+                - heading "Silicon Valley is raising billions to develop wearable AI products. These 15-year-olds built theirs for under $100." [level=3] [ref=e1312]
+                - generic [ref=e1313]:
+                  - text: Read more
+                  - generic [ref=e1314]: →
+            - 'link "Business Insider: Teens Win Prize for Building AI-Powered Smart Glasses for Under $100 (opens in a new tab)" [ref=e1316]':
+              - /url: https://www.businessinsider.com/ai-powered-smart-glasses-vision-impaired-student-science-project-2025-12
+              - img "Visionary student team holding prototype components and a laptop at the Junior Innovators Challenge booth" [ref=e1318]
+              - generic [ref=e1319]:
+                - heading "Teens Win Prize for Building AI-Powered Smart Glasses for Under $100" [level=3] [ref=e1321]
+                - generic [ref=e1322]:
+                  - text: Read more
+                  - generic [ref=e1323]: →
+          - generic [ref=e1324]:
+            - 'link "Hackaday: \"Glasses\" That Transcribe Text To Audio (opens in a new tab)" [ref=e1326]':
+              - /url: https://hackaday.com/2025/03/19/glasses-that-transcribe-text-to-audio/
+              - img "Close-up of the wired DIY Visionary text-to-audio glasses prototype on a table" [ref=e1328]
+              - generic [ref=e1329]:
+                - heading "\"Glasses\" That Transcribe Text To Audio" [level=3] [ref=e1331]
+                - generic [ref=e1332]:
+                  - text: Read more
+                  - generic [ref=e1333]: →
+            - 'link "Yahoo Finance: Akhil Nagori Wins $10,000 Broadcom Coding with Commitment Award for Text-to-Speech Glasses (opens in a new tab)" [ref=e1335]':
+              - /url: https://finance.yahoo.com/news/14-old-combines-origami-physics-021700721.html
+              - generic [ref=e1336]:
+                - heading "Akhil Nagori Wins $10,000 Broadcom Coding with Commitment Award for Text-to-Speech Glasses" [level=3] [ref=e1338]
+                - generic [ref=e1339]:
+                  - text: Read more
+                  - generic [ref=e1340]: →
+          - generic [ref=e1341]:
+            - 'link "The Silicon Valley Voice: Santa Clara Students Take Home Top Prizes at 2025 Thermo Fisher Scientific Junior Innovators Challenge (opens in a new tab)" [ref=e1343]':
+              - /url: https://www.svvoice.com/santa-clara-students-take-home-top-prizes-at-2025-thermo-fisher-scientific-junior-innovators-challenge/
+              - generic [ref=e1344]:
+                - generic [ref=e1345]: The Silicon Valley Voice
+                - heading "Santa Clara Students Take Home Top Prizes at 2025 Thermo Fisher Scientific Junior Innovators Challenge" [level=3] [ref=e1347]
+                - generic [ref=e1348]:
+                  - text: Read more
+                  - generic [ref=e1349]: →
+            - 'link "Maeil Business Newspaper: California Teens Build AI Smart Glasses That Read Text Aloud — for Under $100 (opens in a new tab)" [ref=e1351]':
+              - /url: https://www.mk.co.kr/en/it/11868557
+              - img "Award-winning student in a suit with a trophy and medal against the Junior Innovators Challenge backdrop" [ref=e1353]
+              - generic [ref=e1354]:
+                - heading "California Teens Build AI Smart Glasses That Read Text Aloud — for Under $100" [level=3] [ref=e1356]
+                - generic [ref=e1357]:
+                  - text: Read more
+                  - generic [ref=e1358]: →
+    - contentinfo [ref=e502]:
+      - generic [ref=e503]:
+        - generic [ref=e504]:
+          - generic [ref=e505]:
+            - generic [ref=e506]: Visionary
+            - paragraph [ref=e508]: "AI glasses that read the world aloud. Press once and it reads whatever you're facing: worksheets, menus, signs, handwriting. $60 in parts, open source, and it keeps reading when there's no internet. Built for visually impaired students, hackable by anyone."
+          - generic [ref=e509]:
+            - navigation "Explore" [ref=e511]:
+              - heading "Explore" [level=2] [ref=e512]
+              - list [ref=e513]:
+                - listitem [ref=e514]:
+                  - link "How it works" [ref=e515]:
+                    - /url: "#product-system"
+                - listitem [ref=e1359]:
+                  - link "Everything it does" [ref=e1360]:
+                    - /url: "#everything"
+                - listitem [ref=e516]:
+                  - link "Technology" [ref=e517]:
+                    - /url: "#hardware"
+                - listitem [ref=e518]:
+                  - link "Compare" [ref=e519]:
+                    - /url: "#compare"
+                - listitem [ref=e520]:
+                  - link "Up close" [ref=e521]:
+                    - /url: "#prototype"
+            - navigation "About" [ref=e523]:
+              - heading "About" [level=2] [ref=e524]
+              - list [ref=e525]:
+                - listitem [ref=e526]:
+                  - link "Recognition" [ref=e527]:
+                    - /url: "#recognition"
+                - listitem [ref=e528]:
+                  - link "In the news" [ref=e529]:
+                    - /url: "#news"
+                - listitem [ref=e530]:
+                  - link "FAQ" [ref=e531]:
+                    - /url: "#faq"
+            - navigation "Get involved" [ref=e533]:
+              - heading "Get involved" [level=2] [ref=e534]
+              - list [ref=e535]:
+                - listitem [ref=e536]:
+                  - link "Founder Kit" [ref=e537]:
+                    - /url: "#kit"
+                - listitem [ref=e538]:
+                  - link "Preorder" [ref=e539]:
+                    - /url: mailto:visionaries@akhilnagori.xyz?subject=Founder%20Kit%20preorder
+                - listitem [ref=e540]:
+                  - link "visionaries@akhilnagori.xyz" [ref=e541]:
+                    - /url: mailto:visionaries@akhilnagori.xyz
+        - generic [ref=e542]:
+          - generic [ref=e545]:
+            - heading "A kit, not a medical device" [level=3] [ref=e546]
+            - paragraph [ref=e547]: Visionary is sold as an open-source DIY electronics kit inspired by an accessibility project. It makes no clinical claims and is not a certified medical or safety device.
+          - generic [ref=e550]:
+            - heading "AI & reading accuracy" [level=3] [ref=e551]
+            - paragraph [ref=e552]: Reading is powered by AI vision models and can be imperfect; results vary with lighting, handwriting, and layout. Please verify anything important independently.
+          - generic [ref=e555]:
+            - heading "Ongoing costs, honestly" [level=3] [ref=e556]
+            - paragraph [ref=e557]: Cloud reads cost roughly $0.003 to $0.01 each; kits work with your own API key or a bundled starter credit. Offline reading is free and automatic when there's no internet.
+      - generic [ref=e559]:
+        - paragraph [ref=e560]:
+          - generic [ref=e561]: Try
+          - generic [ref=e562]: it.
+          - generic [ref=e563]: Then
+          - generic [ref=e564]: build
+          - generic [ref=e565]: one.
+        - generic [ref=e566]:
+          - link "Reserve a Founder Kit" [ref=e567]:
+            - /url: mailto:visionaries@akhilnagori.xyz?subject=Founder%20Kit%20preorder
+          - generic [ref=e568]: © 2026 Visionary

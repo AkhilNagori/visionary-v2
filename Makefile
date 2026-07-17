@@ -1,7 +1,8 @@
 # Visionary — dev/test entry points. Run from the repo root.
-# Recipes use paths relative to the repo root (the absolute path may contain spaces).
+# Recipes use paths relative to the repo root (the absolute path may contain spaces,
+# so never hard-code it — `make` runs recipes with the repo root as cwd).
 
-.PHONY: venv golden test demo ios-check
+.PHONY: venv golden test demo dashboard ios-check
 
 venv:
 	python3 -m venv .venv
@@ -26,6 +27,13 @@ demo:
 		VISIONARY_SIM=1 .venv/bin/python3 tests/demo_smoke.py; \
 	else \
 		VISIONARY_SIM=1 python3 tests/demo_smoke.py; \
+	fi
+
+dashboard:
+	@if [ -x .venv/bin/python3 ]; then \
+		cd dashboard && ../.venv/bin/python3 -m uvicorn app:app --port 8400; \
+	else \
+		cd dashboard && python3 -m uvicorn app:app --port 8400; \
 	fi
 
 ios-check:

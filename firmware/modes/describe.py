@@ -5,7 +5,7 @@ import brain
 import state
 import vision
 from metrics import StageTimer
-from modes import stream_see
+from modes import index_memory, stream_see
 
 
 def run_describe():
@@ -36,7 +36,9 @@ def _describe():
         except (brain.BrainOffline, RuntimeError):
             text = ""
         if text:
-            state.get_history().add("describe", text, image_path=image_path)
+            entry_id = state.get_history().add(
+                "describe", text, image_path=image_path)
+            index_memory(entry_id, text)
             timer.log("describe")
             return
 
@@ -51,5 +53,6 @@ def _describe():
         return
     timer.mark("ocr")
     audio.speak(ocr_text if ocr_text else "No text found.")
-    state.get_history().add("describe", ocr_text, image_path=image_path)
+    entry_id = state.get_history().add("describe", ocr_text, image_path=image_path)
+    index_memory(entry_id, ocr_text)
     timer.log("describe")

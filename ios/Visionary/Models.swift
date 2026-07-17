@@ -1,11 +1,11 @@
 import Foundation
 
 // All wire types decode/encode through the shared snake_case coders in APIClient
-// (e.g. "two_way" <-> twoWay, "image_path" <-> imagePath).
+// (e.g. "two_way" <-> twoWay, "interval_s" <-> intervalS, "image_path" <-> imagePath).
 
 struct DeviceStatus: Decodable {
     let online: Bool
-    let battery: Double?    // always null in v1 hardware; UI shows an em-less dash
+    let battery: Double?    // always null in v1 hardware; UI shows a dash
     let wifi: String?
     let version: String
     let uptime: Double
@@ -19,6 +19,16 @@ struct TwoWayConfig: Codable, Equatable {
     var yours: String
 }
 
+struct WakeWordConfig: Codable, Equatable {
+    var enabled: Bool
+    var model: String
+}
+
+struct NavigationConfig: Codable, Equatable {
+    var enabled: Bool
+    var intervalS: Double
+}
+
 struct DeviceConfig: Codable, Equatable {
     var voice: String
     var rate: Double
@@ -26,9 +36,11 @@ struct DeviceConfig: Codable, Equatable {
     var twoWay: TwoWayConfig
     var gestures: [String: String]
     var features: [String: Bool]
+    var wakeWord: WakeWordConfig
+    var navigation: NavigationConfig
 
     enum CodingKeys: String, CodingKey {
-        case voice, rate, language, twoWay, gestures, features
+        case voice, rate, language, twoWay, gestures, features, wakeWord, navigation
     }
 
     // Custom encode so clearing `language` sends an explicit null: PUT /config
@@ -46,6 +58,8 @@ struct DeviceConfig: Codable, Equatable {
         try c.encode(twoWay, forKey: .twoWay)
         try c.encode(gestures, forKey: .gestures)
         try c.encode(features, forKey: .features)
+        try c.encode(wakeWord, forKey: .wakeWord)
+        try c.encode(navigation, forKey: .navigation)
     }
 }
 
@@ -67,6 +81,34 @@ struct HistoryPage: Decodable {
     let page: Int
     let perPage: Int
     let total: Int
+}
+
+/// One /memory/search result. The wire shape is a flat history-entry dict plus
+/// a "score" field, so the entry decodes from the same container as the score.
+struct MemoryHit: Decodable, Identifiable, Equatable {
+    let entry: HistoryEntry
+    let score: Double
+
+    var id: Int { entry.id }
+
+    private enum CodingKeys: String, CodingKey { case score }
+
+    init(from decoder: Decoder) throws {
+        entry = try HistoryEntry(from: decoder)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        score = try c.decodeIfPresent(Double.self, forKey: .score) ?? 0
+    }
+}
+
+/// Queued Tier 3 phone action minted by the glasses' tool-use loop.
+/// type ∈ calendar_event | reminder. Payload values are always strings —
+/// calendar_event: {"title", "date" (ISO8601), "notes"?}; reminder: {"title", "notes"?}.
+struct PhoneAction: Decodable, Identifiable, Equatable {
+    let id: Int
+    let ts: Double
+    let type: String
+    let payload: [String: String]
+    let status: String      // pending | done | failed
 }
 
 // QR payload and manual-entry pairing shape: {"url": "...", "token": "123456"}

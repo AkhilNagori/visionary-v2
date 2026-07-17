@@ -9,6 +9,7 @@ import audio
 import brain
 import state
 from metrics import StageTimer
+from modes import index_memory
 
 _rec = audio.Recorder()
 _lock = threading.Lock()
@@ -80,11 +81,14 @@ def _stop():
     except (brain.BrainOffline, RuntimeError):
         audio.beep("offline")
         audio.speak("Recording transcribed, but I couldn't make a summary without internet.")
-        history.add("recording", transcript, audio_path=dest)
+        entry_id = history.add("recording", transcript, audio_path=dest)
+        index_memory(entry_id, transcript)
         timer.log("recording")
         return
     timer.mark("summary")
 
     audio.speak(summary if summary else "Recording saved.")
-    history.add("recording", transcript, extra={"summary": summary}, audio_path=dest)
+    entry_id = history.add(
+        "recording", transcript, extra={"summary": summary}, audio_path=dest)
+    index_memory(entry_id, transcript + "\n" + summary)
     timer.log("recording")

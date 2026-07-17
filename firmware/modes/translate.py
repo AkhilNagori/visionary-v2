@@ -31,6 +31,8 @@ def run_two_way(stop_event):
     # type: ("threading.Event") -> None
     try:
         _loop(stop_event)
+    except brain.BrainOffline:
+        raise  # loop manager clears config so the watcher won't respawn us offline
     except Exception:
         try:
             audio.beep("err")
@@ -62,7 +64,7 @@ def _loop(stop_event):
         except brain.BrainOffline:
             audio.beep("offline")
             audio.speak("Two-way translation needs internet. Stopping.")
-            return
+            raise  # loop manager disables config so we don't respawn every ~5s
         except Exception:
             audio.beep("err")
             continue
@@ -82,7 +84,7 @@ def _loop(stop_event):
         except brain.BrainOffline:
             audio.beep("offline")
             audio.speak("Two-way translation needs internet. Stopping.")
-            return
+            raise  # loop manager disables config so we don't respawn every ~5s
         except Exception:
             audio.beep("err")
             continue

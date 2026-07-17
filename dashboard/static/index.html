@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Visionary — Classroom Fleet</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --ink: #0f172a;
+      --ink-soft: #475569;
+      --ink-faint: #94a3b8;
+      --line: #e2e8f0;
+      --brand: #2563eb;
+      --brand-soft: #eff4ff;
+      --online: #16a34a;
+      --online-soft: #dcfce7;
+      --offline: #cbd5e1;
+      --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 8px 24px rgba(15, 23, 42, .06);
+      --radius: 16px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1120;
+        --panel: #131c2e;
+        --panel-2: #0f1729;
+        --ink: #e8edf7;
+        --ink-soft: #a4b2cc;
+        --ink-faint: #64748b;
+        --line: #24304a;
+        --brand: #6a9bff;
+        --brand-soft: #17233d;
+        --online: #34d399;
+        --online-soft: #123227;
+        --offline: #3a475f;
+        --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 30px rgba(0, 0, 0, .35);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      padding: 24px 20px 64px;
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; }
+
+    header.top {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 16px; flex-wrap: wrap; margin-bottom: 20px;
+    }
+    header.top h1 {
+      font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -.01em;
+      display: flex; align-items: center; gap: 10px;
+    }
+    header.top h1 .mark {
+      width: 26px; height: 26px; border-radius: 8px; background: var(--brand);
+      color: #fff; display: grid; place-items: center; font-size: 15px; font-weight: 800;
+    }
+    header.top .sub { color: var(--ink-faint); font-size: 13px; }
+    #refreshed { font-variant-numeric: tabular-nums; }
+
+    /* aggregate strip */
+    .agg {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px; margin-bottom: 24px;
+    }
+    .stat {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 16px 18px; box-shadow: var(--shadow);
+    }
+    .stat .label { color: var(--ink-soft); font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em; }
+    .stat .value { font-size: 28px; font-weight: 750; margin-top: 6px; letter-spacing: -.02em;
+      font-variant-numeric: tabular-nums; }
+    .stat .value small { font-size: 15px; color: var(--ink-faint); font-weight: 600; }
+
+    /* card grid */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+      box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column;
+    }
+    .card.off { opacity: .82; }
+    .card .head { padding: 16px 18px 12px; display: flex; align-items: flex-start; gap: 10px; }
+    .card .name { font-size: 16px; font-weight: 700; margin: 0; line-height: 1.25; word-break: break-word; }
+    .card .meta { color: var(--ink-faint); font-size: 12.5px; margin-top: 3px; }
+
+    .dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; margin-top: 4px;
+      background: var(--offline); box-shadow: 0 0 0 3px transparent; }
+    .dot.on { background: var(--online); box-shadow: 0 0 0 4px var(--online-soft); }
+
+    .card .counts { display: flex; gap: 20px; padding: 4px 18px 14px; }
+    .count .n { font-size: 22px; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+    .count .k { color: var(--ink-soft); font-size: 12px; }
+
+    .reads { border-top: 1px solid var(--line); background: var(--panel-2);
+      padding: 6px 0; margin: 0; list-style: none; flex: 1; }
+    .reads .empty { color: var(--ink-faint); font-size: 13px; padding: 14px 18px; font-style: italic; }
+    .reads li.read { padding: 9px 18px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px;
+      align-items: baseline; border-top: 1px solid transparent; }
+    .reads li.read + li.read { border-top-color: var(--line); }
+    .reads .txt { color: var(--ink); font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; }
+    .reads .when { color: var(--ink-faint); font-size: 11.5px; white-space: nowrap;
+      font-variant-numeric: tabular-nums; }
+    .chip { display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; margin-right: 7px;
+      vertical-align: 1px; background: var(--brand-soft); color: var(--brand); }
+    .chip.describe { background: #f3e8ff; color: #7c3aed; }
+    .chip.ask { background: #fff1e6; color: #c2570c; }
+    .chip.recording { background: #e6f6ff; color: #0369a1; }
+    .chip.translate { background: #e7f8ef; color: #087f4f; }
+    @media (prefers-color-scheme: dark) {
+      .chip { background: #1b2745; color: #93b4ff; }
+      .chip.describe { background: #2a1b45; color: #c4a5ff; }
+      .chip.ask { background: #3a2410; color: #f0b483; }
+      .chip.recording { background: #0e2c3d; color: #7cc7ea; }
+      .chip.translate { background: #12331f; color: #74d6a0; }
+    }
+
+    /* empty / instructions state */
+    .empty-state {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 32px; max-width: 720px; margin: 8px auto;
+    }
+    .empty-state h2 { margin: 0 0 6px; font-size: 19px; }
+    .empty-state p { color: var(--ink-soft); margin: 0 0 18px; }
+    .empty-state ol { margin: 0; padding-left: 20px; color: var(--ink); }
+    .empty-state li { margin: 9px 0; }
+    .empty-state code { background: var(--panel-2); border: 1px solid var(--line);
+      border-radius: 6px; padding: 1px 6px; font-size: 13px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .banner { background: #fef2f2; color: #b42318; border: 1px solid #f4c9c4;
+      border-radius: 12px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 16px; }
+    @media (prefers-color-scheme: dark) {
+      .banner { background: #331617; color: #f3a29a; border-color: #5a2422; }
+    }
+
+    footer.priv {
+      margin-top: 40px; text-align: center; color: var(--ink-faint); font-size: 12.5px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    footer.priv .lock { opacity: .8; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <h1><span class="mark" aria-hidden="true">V</span>Visionary — Classroom Fleet</h1>
+      <div class="sub">Live reading activity · refreshed <span id="refreshed">—</span></div>
+    </header>
+
+    <div id="error" class="banner" role="alert" hidden></div>
+
+    <section class="agg" aria-label="Fleet summary">
+      <div class="stat">
+        <div class="label">Stations online</div>
+        <div class="value" id="agg-online">—</div>
+      </div>
+      <div class="stat">
+        <div class="label">Reads today</div>
+        <div class="value" id="agg-reads">—</div>
+      </div>
+      <div class="stat">
+        <div class="label">Stations configured</div>
+        <div class="value" id="agg-total">—</div>
+      </div>
+    </section>
+
+    <main>
+      <ul id="grid" class="grid" style="padding:0;list-style:none;margin:0" aria-label="Student stations"></ul>
+      <div id="empty" class="empty-state" hidden>
+        <h2>No stations configured yet</h2>
+        <p>Point the dashboard at your classroom's glasses to see reading activity here.</p>
+        <ol>
+          <li>Copy <code>devices.example.json</code> to <code>devices.json</code> in the dashboard folder.</li>
+          <li>Add one entry per pair of glasses: its <code>url</code> (from the pairing QR, e.g. <code>http://visionary.local:8321</code>) and its 6-digit <code>token</code>.</li>
+          <li>Restart the dashboard. Stations appear within 15 seconds.</li>
+        </ol>
+      </div>
+    </main>
+
+    <footer class="priv">
+      <span class="lock" aria-hidden="true">🔒</span>
+      <span>Text summaries only. No images or audio ever leave a student's device.</span>
+    </footer>
+  </div>
+
+  <script>
+    var KINDS = { read: "read", describe: "describe", ask: "ask", recording: "recording", translate: "translate" };
+
+    function esc(s) {
+      return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+
+    function relTime(unixSec) {
+      if (!unixSec) return "never";
+      var diff = Date.now() / 1000 - unixSec;
+      if (diff < 0) diff = 0;
+      if (diff < 45) return "just now";
+      if (diff < 90) return "1 min ago";
+      if (diff < 3600) return Math.round(diff / 60) + " min ago";
+      if (diff < 5400) return "1 hr ago";
+      if (diff < 86400) return Math.round(diff / 3600) + " hr ago";
+      var d = Math.round(diff / 86400);
+      return d + (d === 1 ? " day ago" : " days ago");
+    }
+
+    function chip(kind) {
+      var k = KINDS[kind] ? kind : "read";
+      return '<span class="chip ' + k + '">' + esc(k) + "</span>";
+    }
+
+    function readsRows(recent) {
+      if (!recent || !recent.length) {
+        return '<li class="empty">No reads recorded yet.</li>';
+      }
+      return recent.map(function (r) {
+        return '<li class="read">' +
+          '<span class="txt">' + chip(r.kind) + esc(r.text || "(no text)") + "</span>" +
+          '<span class="when">' + esc(relTime(r.ts)) + "</span>" +
+        "</li>";
+      }).join("");
+    }
+
+    function card(name, d) {
+      var online = !!d.online;
+      var lastActivity = (d.recent && d.recent.length) ? d.recent[0].ts : d.last_seen;
+      var statusWord = online ? "online" : "offline";
+      return '<li class="card ' + (online ? "" : "off") + '">' +
+        '<div class="head">' +
+          '<span class="dot ' + (online ? "on" : "") + '" role="img" aria-label="' + statusWord + '"></span>' +
+          "<div>" +
+            '<h2 class="name">' + esc(name) + "</h2>" +
+            '<div class="meta">' + (online ? "Online" : "Offline") +
+              " · last activity " + esc(relTime(lastActivity)) + "</div>" +
+          "</div>" +
+        "</div>" +
+        '<div class="counts">' +
+          '<div class="count"><div class="n">' + (d.reads_today || 0) + '</div>' +
+            '<div class="k">reads today</div></div>' +
+          '<div class="count"><div class="n">' + (d.recent ? d.recent.length : 0) + '</div>' +
+            '<div class="k">recent</div></div>' +
+        "</div>" +
+        '<ul class="reads" aria-label="Recent reads for ' + esc(name) + '">' + readsRows(d.recent) + "</ul>" +
+      "</li>";
+    }
+
+    function render(snap) {
+      var names = Object.keys(snap || {}).sort(function (a, b) {
+        return a.localeCompare(b, undefined, { numeric: true });
+      });
+      var grid = document.getElementById("grid");
+      var empty = document.getElementById("empty");
+
+      if (!names.length) {
+        grid.innerHTML = "";
+        empty.hidden = false;
+        setText("agg-online", "0");
+        setText("agg-reads", "0");
+        setText("agg-total", "0");
+        return;
+      }
+      empty.hidden = true;
+
+      var onlineCount = 0, readsTotal = 0;
+      grid.innerHTML = names.map(function (name) {
+        var d = snap[name] || {};
+        if (d.online) onlineCount++;
+        readsTotal += (d.reads_today || 0);
+        return card(name, d);
+      }).join("");
+
+      document.getElementById("agg-online").innerHTML =
+        onlineCount + ' <small>/ ' + names.length + "</small>";
+      setText("agg-reads", String(readsTotal));
+      setText("agg-total", String(names.length));
+    }
+
+    function setText(id, t) { document.getElementById(id).textContent = t; }
+
+    function showError(msg) {
+      var el = document.getElementById("error");
+      if (msg) { el.textContent = msg; el.hidden = false; }
+      else { el.hidden = true; }
+    }
+
+    function refresh() {
+      fetch("/fleet", { cache: "no-store" })
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then(function (snap) {
+          showError(null);
+          render(snap);
+          setText("refreshed", new Date().toLocaleTimeString());
+        })
+        .catch(function (e) {
+          showError("Can't reach the dashboard server. Retrying… (" + e.message + ")");
+        });
+    }
+
+    refresh();
+    setInterval(refresh, 10000);
+  </script>
+</body>
+</html>

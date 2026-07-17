@@ -27,6 +27,10 @@ targets:
         NSLocalNetworkUsageDescription: Visionary talks directly to your glasses over the local network. Nothing leaves your devices.
         NSBonjourServices:
           - _visionary._tcp
+        NSCalendarsUsageDescription: Visionary adds calendar events you ask the glasses to capture, like a flyer's date.
+        NSRemindersUsageDescription: Visionary creates reminders you ask the glasses to capture.
+        NSCalendarsFullAccessUsageDescription: Visionary adds calendar events you ask the glasses to capture, like a flyer's date.
+        NSRemindersFullAccessUsageDescription: Visionary creates reminders you ask the glasses to capture.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.visionary.ios

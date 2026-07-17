@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Station 1",
+    "url": "http://visionary.local:8321",
+    "token": "123456"
+  },
+  {
+    "name": "Station 2",
+    "url": "http://visionary-2.local:8321",
+    "token": "654321"
+  }
+]
