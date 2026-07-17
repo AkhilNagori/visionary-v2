@@ -1,6 +1,6 @@
 # Visionary — Full Software Specification
 
-Firmware (all three tiers) + companion iOS app. Firmware Tier 1 exists in `code/`; this doc is the complete blueprint for everything else.
+Firmware (all three tiers) + companion iOS app. The firmware lives in `firmware/`; this doc is the complete blueprint.
 
 ## Project context
 

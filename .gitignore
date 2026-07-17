@@ -5,3 +5,19 @@ __pycache__/
 tests/golden/
 .DS_Store
 .env
+# tool caches and session scratch
+.playwright-mcp/
+.pytest_cache/
+scratch_home/
+.claude/
+*.tmp
+.~lock*
+# pitch-deck tooling + rendered assets from a parallel session (not part of the software project)
+node_modules/
+package.json
+package-lock.json
+deck.js
+slide-*.jpg
+*.jpeg
+*.pptx
+Visionary_Features.pdf

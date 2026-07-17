@@ -228,7 +228,7 @@ NAVIGATE_PROMPT: str   # short assistive callouts: hazards, signage, doorways; P
 def read_prompt(language: Optional[str]) -> str   # READ_PROMPT (+ "Translate everything to {language}." if set)
 ```
 
-Prompt text: reuse/refine the prompts in `code/visionary.py`.
+Prompt text: refined from the original single-file build; the canonical copies live in `brain.py`.
 
 ## firmware/memory.py — Tier 3 visual memory
 

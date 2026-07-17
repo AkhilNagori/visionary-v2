@@ -55,10 +55,10 @@ PowerBoost 5V / GND  →  Pi pin 2 / pin 6
 
 The V1.3-style lens is fixed-focus at ~1m+. Reading distance is 25–40cm. **Twist the lens** (grip with pliers gently or the supplied tool; some have a glue dot — score it with a blade) counterclockwise a fraction of a turn until text at 30cm is sharp. Check with `libcamera-still -o test.jpg` over SSH.
 
-## Software (files in code/)
+## Software (files in firmware/)
 
 1. Flash **Raspberry Pi OS Lite 64-bit (Bookworm)** with Raspberry Pi Imager. Preconfigure WiFi (home + your phone hotspot SSID) and SSH in the imager settings.
-2. `scp` the `code/` folder over, then `sudo bash setup.sh`.
+2. `scp` the repo over, then `sudo bash firmware/setup.sh`.
 3. Put your Anthropic API key in `/etc/visionary.env` (console.anthropic.com — $5 of credit covers hundreds of demo reads on Haiku).
 4. Reboot. It announces "Visionary ready" on boot. No keyboard/screen ever needed at the booth.
 

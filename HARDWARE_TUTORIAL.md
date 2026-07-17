@@ -48,7 +48,7 @@ Also: mic **SEL/LR → GND** (left channel), amp **SD → leave unconnected**, a
 
 1. Flash **Raspberry Pi OS Lite 64-bit (Bookworm)** with Raspberry Pi Imager. In the imager's settings: hostname `visionary`, enable SSH, add your home WiFi AND your phone hotspot.
 2. Power the bare Pi from a normal USB supply into **PWR IN** (the micro-USB port nearer the corner). SSH in: `ssh pi@visionary.local`.
-3. Copy over `code/` and run `sudo bash setup.sh` (see software doc — use the `googlevoicehat-soundcard` overlay, not `max98357a`).
+3. Copy over the repo and run `sudo bash firmware/setup.sh` (see software doc — use the `googlevoicehat-soundcard` overlay, not `max98357a`).
 
 ### Step 1 — Camera
 

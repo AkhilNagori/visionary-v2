@@ -49,7 +49,7 @@ mkdir -p "$HOME_DIR/voices" "$HOME_DIR/sounds" "$HOME_DIR/captures" "$HOME_DIR/r
 mkdir -p /var/log/visionary
 V="$HOME_DIR/voices"
 BASE=https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/low
-# Each file goes to its own name: the old code/setup.sh clobbered the .onnx weights
+# Each file goes to its own name: an earlier setup script clobbered the .onnx weights
 # with the .onnx.json config (both wget'd to the same target). Keep them separate.
 if [ ! -s "$V/en_US-lessac-low.onnx" ]; then
   wget -q -O "$V/en_US-lessac-low.onnx" "$BASE/en_US-lessac-low.onnx"
