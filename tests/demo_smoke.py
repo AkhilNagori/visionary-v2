@@ -3,9 +3,10 @@
 
 Fakes a single button press through the real read pipeline in SIM mode, with a
 generated golden worksheet as the "camera" image, and asserts that *something*
-was spoken. It forces the offline path (no API key), so on a machine without
-Tesseract the graceful spoken failure ("I can't read right now...") still
-counts as a pass — the point is that the device never fails silently.
+was spoken. With OPENAI_API_KEY set (and network) it exercises the real cloud
+read path; with no key it runs offline, so on a machine without Tesseract the
+graceful spoken failure ("I can't read right now...") still counts as a pass —
+the point is that the device never fails silently either way.
 
 Prints PASS/FAIL and exits 0/1 so it can gate a demo build.
 """
@@ -21,9 +22,8 @@ def main():
 
     os.environ["VISIONARY_SIM"] = "1"
     os.environ["VISIONARY_HOME"] = tempfile.mkdtemp(prefix="visionary_demo_")
-    # Force offline: the demo must run with no key and no network.
-    os.environ.pop("ANTHROPIC_API_KEY", None)
-    os.environ.pop("OPENAI_API_KEY", None)
+    # Cloud when OPENAI_API_KEY is set, offline otherwise — either way the device
+    # must speak something, never fail silently.
 
     firmware = os.path.join(root, "firmware")
     for path in (firmware, here):

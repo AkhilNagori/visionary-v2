@@ -12,7 +12,7 @@ visionary/
 │   ├── main.py            # entrypoint: gesture engine, dispatcher, UDS command server, boot
 │   ├── audio.py           # play/beep/speak (Piper), SentenceSpeaker, Recorder, record_until_silence
 │   ├── vision.py          # camera lifecycle, capture, preview, OCR preprocessing
-│   ├── brain.py           # Claude vision/chat (streaming + tool-use), Whisper STT, Tesseract OCR, online check, prompts
+│   ├── brain.py           # OpenAI vision/chat (streaming + function-calling), Whisper STT, Tesseract OCR, online check, prompts
 │   ├── state.py           # paths, config load/save, SQLite history + phone-action queue, pairing token + QR
 │   ├── memory.py          # Tier 3: visual memory — embeddings + FTS5 search over history
 │   ├── wakeword.py        # Tier 3: openWakeWord listener ("hey vision" trigger)
@@ -49,9 +49,8 @@ visionary/
 | `VISIONARY_SIM` | `"1"` = simulation mode: no camera/GPIO/ALSA; print instead | unset |
 | `VISIONARY_SIM_IMAGE` | path to JPEG/PNG returned by sim capture | unset (sim generates a text image) |
 | `VISIONARY_SIM_WAV` | path to WAV returned by sim recorder | unset (sim generates 1s silence) |
-| `ANTHROPIC_API_KEY` | Claude API | — |
-| `OPENAI_API_KEY` | Whisper STT API (optional) | — |
-| `VISIONARY_MODEL` | Claude model id | `claude-haiku-4-5` |
+| `OPENAI_API_KEY` | OpenAI API (vision, chat, Whisper STT, embeddings) — required | — |
+| `VISIONARY_MODEL` | OpenAI model id | `gpt-4o-mini` |
 | `VISIONARY_ALSA_CAPTURE` | arecord device | `plughw:0,0` |
 
 SIM mode is decided **once per module import** via
@@ -194,25 +193,26 @@ def save_capture(jpeg: bytes) -> str      # write HOME/captures/<ts>.jpg, return
 class BrainOffline(Exception): ...
 
 def is_online(force: bool = False) -> bool
-    # socket check to api.anthropic.com:443 AND ANTHROPIC_API_KEY present; cached 10s;
+    # socket check to api.openai.com:443 AND OPENAI_API_KEY present; cached 10s;
     # never blocks a button press for more than ~2s and only when the cache is stale.
 
 def see(jpeg: bytes, prompt: str, on_text: Optional[Callable[[str], None]] = None,
         history_msgs: Optional[List[dict]] = None,
         tools: Optional[List[dict]] = None,
         tool_handlers: Optional[Dict[str, Callable[[dict], str]]] = None) -> str
-    # Claude messages API with streaming (SSE via requests, stream=True).
-    # history_msgs = prior conversation turns (Anthropic message dicts) prepended.
+    # OpenAI chat.completions API with streaming (SSE via requests, stream=True);
+    # image sent as a data: URL image_url content part.
+    # history_msgs = prior conversation turns (OpenAI message dicts) prepended.
     # Raises BrainOffline on network failure, RuntimeError on API error.
-    # Tier 3 tool-use: when tools given, runs NON-streaming with a tool loop —
-    # while stop_reason=="tool_use": run tool_handlers[name](input) -> str, append
-    # tool_result, continue (max 5 rounds). Final text goes to on_text once and returns.
+    # Tier 3 function-calling: when tools given, runs NON-streaming with a tool loop —
+    # while the reply has tool_calls: run tool_handlers[name](args) -> str, append a
+    # role:"tool" result, continue (max 5 rounds). Final text goes to on_text once and returns.
 
 def chat(messages: List[dict], system: Optional[str] = None,
          on_text: Optional[Callable[[str], None]] = None) -> str
-    # text-only Claude call, same error contract.
+    # text-only OpenAI call, same error contract.
 
-TOOL_SEARCH_MEMORY: dict   # Anthropic tool schema: search_memory(query: str, k?: int)
+TOOL_SEARCH_MEMORY: dict   # OpenAI function schema: search_memory(query: str, k?: int)
 TOOL_PHONE_ACTION: dict    # phone_action(type: calendar_event|reminder, title: str, date?: str, notes?: str)
 
 def transcribe(wav_path: str) -> str
@@ -409,7 +409,7 @@ Battery is `null` in v1 (no fuel gauge on the PowerBoost Basic) — clients show
   fastapi, uvicorn, qrcode) with `--break-system-packages`, I2S overlay
   (`googlevoicehat-soundcard`, `dtparam=audio=off`), piper voice download, sox-generated
   beeps (6 sounds), rsync `firmware/` → `/opt/visionary/app/`, `/etc/visionary.env`
-  (ANTHROPIC_API_KEY, OPENAI_API_KEY placeholders, chmod 600), install+enable both
+  (OPENAI_API_KEY placeholder, chmod 600), install+enable both
   services + avahi file. Optional `--with-whisper` flag builds whisper.cpp + tiny.en
   into `HOME/whisper/`. Optional `--with-wakeword` flag pip-installs openwakeword and
   pre-downloads its models.

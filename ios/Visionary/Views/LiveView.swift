@@ -16,13 +16,13 @@ struct LiveView: View {
                                 .id(streamID)
                                 .aspectRatio(4.0 / 3.0, contentMode: .fit)
                                 .frame(maxWidth: .infinity)
-                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                             hintCard
                             privacyNote
                         }
                         .padding()
                     }
-                    .background(Color(.systemGroupedBackground))
+                    .background(DS.Palette.canvas)
                 } else {
                     unpairedState
                 }
@@ -81,19 +81,13 @@ struct LiveView: View {
     }
 
     private var unpairedState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "video.slash")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-            Text("No glasses connected")
-                .font(.title3.bold())
-            Text("Pair with your Visionary glasses to see their live camera preview.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.horizontal, 32)
+        EmptyStateView(
+            icon: "video.slash",
+            title: "No glasses connected",
+            message: "Pair with your Visionary glasses to see their live camera preview."
+        )
+        .padding(.horizontal, DS.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Palette.canvas)
     }
 }

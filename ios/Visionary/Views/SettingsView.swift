@@ -80,17 +80,7 @@ struct SettingsView: View {
             .onChange(of: appState.config) { newValue in
                 if draft == nil { draft = newValue }
             }
-            .overlay(alignment: .bottom) {
-                if let toast = toast {
-                    Label(toast, systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.weight(.medium))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(.regularMaterial, in: Capsule())
-                        .padding(.bottom, 12)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
+            .dsToast($toast)
             .alert("Couldn't reach the glasses", isPresented: errorBinding) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -106,35 +96,24 @@ struct SettingsView: View {
     // MARK: - Loading / error
 
     private var loadingState: some View {
-        VStack(spacing: 12) {
-            ProgressView().controlSize(.large)
-            Text("Loading settings from the glasses…")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
+        LoadingStateView(label: "Loading settings from the glasses…")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DS.Palette.canvas)
     }
 
     private func loadFailedState(_ error: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 40))
-                .foregroundStyle(.orange)
-            Text("Couldn't load settings")
-                .font(.title3.bold())
-            Text(error)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button("Try Again") {
-                Task { await appState.refresh() }
-            }
-            .buttonStyle(.borderedProminent)
+        EmptyStateView(
+            icon: "wifi.exclamationmark",
+            tint: DS.Palette.attention,
+            title: "Couldn't load settings",
+            message: error,
+            actionTitle: "Try Again"
+        ) {
+            Task { await appState.refresh() }
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, DS.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Palette.canvas)
     }
 
     // MARK: - Form
@@ -389,12 +368,7 @@ struct SettingsView: View {
     }
 
     private func showToast(_ text: String) {
-        withAnimation { toast = text }
-        UIAccessibility.post(notification: .announcement, argument: text)
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            withAnimation { if toast == text { toast = nil } }
-        }
+        toast = text   // .dsToast announces, floats in, and auto-dismisses
     }
 
     // MARK: - Option helpers

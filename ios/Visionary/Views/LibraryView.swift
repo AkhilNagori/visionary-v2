@@ -1,39 +1,5 @@
 import SwiftUI
 
-/// Segmented control that falls back to a menu at accessibility type sizes,
-/// where several segments can't render legibly. Shared by the Library and
-/// Live tabs.
-struct SegmentPicker<Option: Hashable>: View {
-    let title: String
-    let options: [Option]
-    let label: (Option) -> String
-    @Binding var selection: Option
-
-    @Environment(\.dynamicTypeSize) private var typeSize
-
-    var body: some View {
-        Group {
-            if typeSize.isAccessibilitySize {
-                Picker(title, selection: $selection) {
-                    ForEach(options, id: \.self) { option in
-                        Text(label(option)).tag(option)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            } else {
-                Picker(title, selection: $selection) {
-                    ForEach(options, id: \.self) { option in
-                        Text(label(option)).tag(option)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-        }
-        .onChange(of: selection) { _ in Haptics.selection() }
-    }
-}
-
 /// Library tab: everything the glasses have captured, in one place —
 /// History / Search / Recorder / Flashcards / Notes. The segments are the
 /// existing full screens, kept alive behind the switcher so scroll positions,
@@ -59,9 +25,9 @@ struct LibraryView: View {
                 pane(.flashcards) { FlashcardsView() }
                 pane(.notes) { NotesView() }
             }
-            .animation(.easeInOut(duration: 0.15), value: appState.librarySegment)
+            .animation(DS.Motion.gentle, value: appState.librarySegment)
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .background(DS.Palette.canvas.ignoresSafeArea())
     }
 
     private func pane<Content: View>(_ segment: LibrarySegment,

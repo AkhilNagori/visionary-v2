@@ -197,56 +197,34 @@ struct RecorderView: View {
     @ViewBuilder
     private var stateView: some View {
         if model.isLoading {
-            VStack(spacing: 12) {
-                ProgressView().controlSize(.large)
-                Text("Loading recordings…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            LoadingStateView(label: "Loading recordings…")
         } else if let error = model.loadError {
-            VStack(spacing: 12) {
-                Image(systemName: "wifi.exclamationmark")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.orange)
-                Text("Couldn't load recordings")
-                    .font(.title3.bold())
-                Text(error)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Button("Try Again") {
-                    Task { await model.reload(client: appState.client) }
-                }
-                .buttonStyle(.borderedProminent)
+            EmptyStateView(
+                icon: "wifi.exclamationmark",
+                tint: DS.Palette.attention,
+                title: "Couldn't load recordings",
+                message: error,
+                actionTitle: "Try Again"
+            ) {
+                Task { await model.reload(client: appState.client) }
             }
         } else if model.hasMore {
-            VStack(spacing: 12) {
-                Image(systemName: "waveform.badge.magnifyingglass")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-                Text("No recordings yet")
-                    .font(.title3.bold())
-                Text("None in recent activity — there may be older ones.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Button("Scan Older History") {
-                    Task { await model.loadMore(client: appState.client) }
-                }
-                .buttonStyle(.bordered)
+            EmptyStateView(
+                icon: "waveform.badge.magnifyingglass",
+                tint: DS.Palette.record,
+                title: "No recordings yet",
+                message: "None in recent activity — there may be older ones.",
+                actionTitle: "Scan Older History"
+            ) {
+                Task { await model.loadMore(client: appState.client) }
             }
         } else {
-            VStack(spacing: 12) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.pink)
-                Text("No recordings yet")
-                    .font(.title3.bold())
-                Text("Triple-press the button on the glasses to record a lecture or conversation. The transcript and an AI summary land here.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+            EmptyStateView(
+                icon: "waveform",
+                tint: DS.Palette.record,
+                title: "No recordings yet",
+                message: "Triple-press the button on the glasses to record a lecture or conversation. The transcript and an AI summary land here."
+            )
         }
     }
 
@@ -299,15 +277,8 @@ private struct RecordingRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.pink.opacity(0.15))
-                    .frame(width: 40, height: 40)
-                Image(systemName: "waveform")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.pink)
-            }
+        HStack(spacing: DS.Space.m) {
+            IconTile(icon: "waveform", tint: DS.Palette.record)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.body)
@@ -326,7 +297,7 @@ private struct RecordingRow: View {
             Spacer()
             Image(systemName: entry.hasAudio ? "play.circle" : "chevron.forward")
                 .font(.title3)
-                .foregroundStyle(entry.hasAudio ? Color.pink : Color(.tertiaryLabel))
+                .foregroundStyle(entry.hasAudio ? DS.Palette.record : Color(.tertiaryLabel))
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
@@ -415,9 +386,10 @@ private struct RecordingDetailView: View {
                 } label: {
                     Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.system(size: 64))
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(DS.Palette.record)
                         .symbolRenderingMode(.hierarchical)
                 }
+                .buttonStyle(.pressable)
                 .disabled(!player.isReady)
                 .opacity(player.isReady ? 1 : 0.4)
                 .accessibilityLabel(player.isPlaying ? "Pause" : "Play recording")
@@ -460,11 +432,7 @@ private struct RecordingDetailView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-        )
+        .cardStyle()
     }
 
     private func block(_ title: String, _ text: String, icon: String) -> some View {

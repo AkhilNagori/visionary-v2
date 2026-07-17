@@ -89,7 +89,7 @@ def _loop(mode, stop_event):
     timer.log("session")
     if not opening.strip():
         audio.speak("I'm ready. Tell me when to go.")
-    # Never seed an empty assistant turn: Anthropic rejects empty content on the
+    # Never seed an empty assistant turn: the API rejects empty content on the
     # next call.
     messages.append({"role": "assistant", "content": opening.strip() or "Ready."})
 

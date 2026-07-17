@@ -184,45 +184,23 @@ struct ActionsInboxView: View {
     @ViewBuilder
     private var stateView: some View {
         if model.isLoading {
-            VStack(spacing: 12) {
-                ProgressView().controlSize(.large)
-                Text("Checking with the glasses…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            LoadingStateView(label: "Checking with the glasses…")
         } else if let error = model.loadError {
-            VStack(spacing: 12) {
-                Image(systemName: "wifi.exclamationmark")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.orange)
-                Text("Couldn't load actions")
-                    .font(.title3.bold())
-                Text(error)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Button("Try Again") {
-                    Task { await model.load(client: appState.client) }
-                }
-                .buttonStyle(.borderedProminent)
+            EmptyStateView(
+                icon: "wifi.exclamationmark",
+                tint: DS.Palette.attention,
+                title: "Couldn't load actions",
+                message: error,
+                actionTitle: "Try Again"
+            ) {
+                Task { await model.load(client: appState.client) }
             }
         } else {
-            VStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color.accentColor.opacity(0.12))
-                        .frame(width: 88, height: 88)
-                    Image(systemName: "tray")
-                        .font(.system(size: 36))
-                        .foregroundStyle(Color.accentColor)
-                }
-                Text("Inbox zero")
-                    .font(.title3.bold())
-                Text("When you ask the glasses to send a text, draft an email, or take a note, it waits here for your OK.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+            EmptyStateView(
+                icon: "tray",
+                title: "Inbox zero",
+                message: "When you ask the glasses to send a text, draft an email, or take a note, it waits here for your OK."
+            )
         }
     }
 
@@ -453,15 +431,9 @@ private struct InboxRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(InboxStyle.color(for: action.type).opacity(0.15))
-                    .frame(width: 40, height: 40)
-                Image(systemName: InboxStyle.icon(for: action.type))
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(InboxStyle.color(for: action.type))
-            }
+        HStack(spacing: DS.Space.m) {
+            IconTile(icon: InboxStyle.icon(for: action.type),
+                     tint: InboxStyle.color(for: action.type))
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.body)

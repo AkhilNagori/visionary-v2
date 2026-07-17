@@ -1,6 +1,6 @@
 """Visionary action modes: read, describe, ask, recorder, translate, navigate.
 
-stream_see() is the shared online-vision pipeline: it feeds Claude's streamed
+stream_see() is the shared online-vision pipeline: it feeds the model's streamed
 chunks into a SentenceSpeaker so the first sentence is audible while the model
 is still generating — the perceived-latency win the whole product is pitched on.
 

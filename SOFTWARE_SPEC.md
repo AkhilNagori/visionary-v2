@@ -54,7 +54,7 @@ Firmware (all three tiers) + companion iOS app. The firmware lives in `firmware/
 - **Device**: Pi Zero 2 W (quad A53, 512MB RAM — the real constraint), Raspberry Pi OS Lite 64-bit Bookworm.
 - **Audio**: one I2S bus, `googlevoicehat-soundcard` overlay → ALSA card with playback (MAX98357A) + capture (ICS-43434, 48kHz S32_LE; downsample to 16kHz mono for STT).
 - **Input**: one GPIO button (17). Gesture grammar: single / double / triple / hold.
-- **Cloud**: Anthropic API (vision + chat), OpenAI Whisper API or local whisper.cpp for STT. All cloud calls must have offline fallbacks or graceful spoken failures.
+- **Cloud**: OpenAI API (vision + chat), OpenAI Whisper API or local whisper.cpp for STT. All cloud calls must have offline fallbacks or graceful spoken failures.
 - **Config**: `/etc/visionary.env` (keys), `/opt/visionary/config.json` (voice, speed, language, mode flags — the iOS app edits this file via the local API).
 - **Process model**: single Python service (`visionary.service`, systemd, auto-restart) + optional `visionary-api.service` for the app/API. Watchdog: systemd `Restart=on-failure`.
 
@@ -66,7 +66,7 @@ visionary/
 │   ├── main.py            # entrypoint, event loop, gesture router
 │   ├── audio.py           # play/beep/speak (Piper), record (ALSA), VAD
 │   ├── vision.py          # picamera2 capture, preprocessing
-│   ├── brain.py           # cloud (Claude/Whisper) + offline (tesseract/whisper.cpp) with auto-fallback
+│   ├── brain.py           # cloud (OpenAI/Whisper) + offline (tesseract/whisper.cpp) with auto-fallback
 │   ├── modes/             # read.py, describe.py, ask.py, recorder.py, translate.py
 │   ├── state.py           # config load/save, history store (SQLite)
 │   └── api.py             # FastAPI local server for iOS app
@@ -81,8 +81,8 @@ visionary/
 
 | Feature | Trigger | Pipeline | Latency target |
 |---|---|---|---|
-| Read aloud | single press | capture → Claude vision (READ prompt) → Piper TTS | < 6s to first audio |
-| Scene description | double press | capture → Claude vision (DESCRIBE prompt) → TTS | < 6s |
+| Read aloud | single press | capture → OpenAI vision (READ prompt) → Piper TTS | < 6s to first audio |
+| Scene description | double press | capture → OpenAI vision (DESCRIBE prompt) → TTS | < 6s |
 | Translation reading | config flag / auto | same as Read, prompt adds "translate to {lang}" | < 6s |
 | Offline read | automatic on no-net | capture → preprocess (grayscale, autocontrast, deskew) → Tesseract → TTS | < 10s |
 | Boot-to-ready | power switch | systemd → spoken "Visionary ready" | < 30s |
@@ -90,7 +90,7 @@ visionary/
 | Safe shutdown | hold 5s | spoken goodbye → `shutdown -h` | — |
 
 Engineering notes:
-- Speak the FIRST sentence as soon as it streams in (use Claude streaming API) — perceived latency is the demo.
+- Speak the FIRST sentence as soon as it streams in (use the OpenAI streaming API) — perceived latency is the demo.
 - Keep camera started continuously (capture in <300ms) rather than cold-starting per press.
 - Connectivity check is cached 10s; never block a press on it.
 
@@ -98,9 +98,9 @@ Engineering notes:
 
 | Feature | Trigger | Pipeline |
 |---|---|---|
-| Ask-about-what-you-see | hold 1s, speak, release | record while held → Whisper STT → capture photo → Claude (image + question) → TTS |
-| Voice assistant | hold with no readable scene / config | record → STT → Claude chat (with short conversation memory) → TTS |
-| Magic recorder | triple press start/stop | record to file (chunked) → Whisper transcript → Claude summary → speak summary, store both |
+| Ask-about-what-you-see | hold 1s, speak, release | record while held → Whisper STT → capture photo → OpenAI (image + question) → TTS |
+| Voice assistant | hold with no readable scene / config | record → STT → OpenAI chat (with short conversation memory) → TTS |
+| Magic recorder | triple press start/stop | record to file (chunked) → Whisper transcript → OpenAI summary → speak summary, store both |
 | Two-way translation | config mode | VAD-segmented loop: hear ES → speak EN; hold-to-talk EN → speak ES |
 
 Engineering notes:
@@ -113,7 +113,7 @@ Engineering notes:
 
 - **Memory**: every capture + transcript embedded (cloud embeddings) into SQLite-VSS; query "what did that poster say an hour ago?"
 - **Navigation assist**: periodic low-res captures → obstacle/sign callouts (strictly assistive-info framing, not a safety device).
-- **Agent actions**: "add this to my calendar" → Claude tool-use → iOS app executes via EventKit.
+- **Agent actions**: "add this to my calendar" → OpenAI function-calling → iOS app executes via EventKit.
 - **Classroom dashboard**: teacher web view of anonymized reading activity across a kit fleet.
 - **Wake word**: openWakeWord ("hey vision") — feasible on Zero 2 W at ~15% CPU.
 

@@ -60,7 +60,7 @@ def visionary_env(monkeypatch):
     monkeypatch.setenv("VISIONARY_SIM", "1")
     monkeypatch.setenv("VISIONARY_HOME", home)
     # Tests opt in to keys/fixtures explicitly; never inherit the dev shell's.
-    for var in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY",
+    for var in ("OPENAI_API_KEY",
                 "VISIONARY_SIM_IMAGE", "VISIONARY_SIM_WAV",
                 "VISIONARY_MODEL", "VISIONARY_ALSA_CAPTURE"):
         monkeypatch.delenv(var, raising=False)

@@ -4,7 +4,7 @@ Goal by Saturday morning: one polished wearable demo unit + one "guts on a board
 
 ## What it does (demo version)
 
-Single button press → camera snaps the page → Claude vision reads ALL text aloud through the speaker in a natural voice, ~4–6 s. Double press → describes the whole scene ("a whiteboard with a diagram, two people to your left..."). Works offline too (Tesseract OCR + Piper TTS) when WiFi drops — huge credibility point at a crowded conference.
+Single button press → camera snaps the page → OpenAI vision reads ALL text aloud through the speaker in a natural voice, ~4–6 s. Double press → describes the whole scene ("a whiteboard with a diagram, two people to your left..."). Works offline too (Tesseract OCR + Piper TTS) when WiFi drops — huge credibility point at a crowded conference.
 
 ## Hardware audit
 
@@ -59,7 +59,7 @@ The V1.3-style lens is fixed-focus at ~1m+. Reading distance is 25–40cm. **Twi
 
 1. Flash **Raspberry Pi OS Lite 64-bit (Bookworm)** with Raspberry Pi Imager. Preconfigure WiFi (home + your phone hotspot SSID) and SSH in the imager settings.
 2. `scp` the repo over, then `sudo bash firmware/setup.sh`.
-3. Put your Anthropic API key in `/etc/visionary.env` (console.anthropic.com — $5 of credit covers hundreds of demo reads on Haiku).
+3. Put your OpenAI API key in `/etc/visionary.env` (platform.openai.com — $5 of credit covers hundreds of demo reads on gpt-4o-mini).
 4. Reboot. It announces "Visionary ready" on boot. No keyboard/screen ever needed at the booth.
 
 ## 3D printed frame strategy
@@ -77,7 +77,7 @@ Don't design a full glasses frame from scratch — no time to iterate fit. Inste
 
 ### Thursday (today)
 - Now: order missing parts (overnight). Flash SD card. Start `setup.sh` on the bare Pi powered by a normal USB supply — software doesn't need the battery chain.
-- Evening: get the full pipeline working on the bench: button → beep → Claude reads a page aloud. Fix camera focus. Start printing draft frame pods overnight.
+- Evening: get the full pipeline working on the bench: button → beep → OpenAI reads a page aloud. Fix camera focus. Start printing draft frame pods overnight.
 
 ### Friday
 - Morning: solder amp + button (only 6 solder joints left in the whole build). **Test after every solder step.** Verify power bank runs the full pipeline for 30 min.

@@ -11,28 +11,19 @@ import pytest
 # --- fake streamed (SSE) and non-streamed HTTP responses --------------------
 
 def _sse_lines(deltas):
-    """A realistic Anthropic message stream carrying the given text deltas."""
+    """A realistic OpenAI chat.completions stream carrying the given deltas."""
     lines = []
 
-    def event(etype, obj):
-        lines.append("event: " + etype)
+    def chunk(obj):
         lines.append("data: " + json.dumps(obj))
         lines.append("")
 
-    event("message_start",
-          {"type": "message_start",
-           "message": {"id": "msg_1", "role": "assistant", "content": []}})
-    event("content_block_start",
-          {"type": "content_block_start", "index": 0,
-           "content_block": {"type": "text", "text": ""}})
     for d in deltas:
-        event("content_block_delta",
-              {"type": "content_block_delta", "index": 0,
-               "delta": {"type": "text_delta", "text": d}})
-    event("content_block_stop", {"type": "content_block_stop", "index": 0})
-    event("message_delta",
-          {"type": "message_delta", "delta": {"stop_reason": "end_turn"}})
-    event("message_stop", {"type": "message_stop"})
+        chunk({"choices": [{"index": 0, "delta": {"content": d},
+                            "finish_reason": None}]})
+    chunk({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})
+    lines.append("data: [DONE]")
+    lines.append("")
     return lines
 
 
@@ -76,7 +67,7 @@ class FakeJSON:
 
 def test_is_online_caches_within_window(load, monkeypatch):
     brain = load("brain")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
     calls = {"n": 0}
 
     class Conn:
@@ -106,7 +97,7 @@ def test_is_online_caches_within_window(load, monkeypatch):
 
 def test_is_online_false_without_key(load, monkeypatch):
     brain = load("brain")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     def boom(*a, **k):
         raise AssertionError("must not connect without an API key")
@@ -119,7 +110,7 @@ def test_is_online_false_without_key(load, monkeypatch):
 
 def test_see_streams_deltas_in_order(load, monkeypatch):
     brain = load("brain")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
     deltas = ["Hello, ", "this is ", "the answer."]
     monkeypatch.setattr(brain.requests, "post",
                         lambda *a, **k: FakeSSE(_sse_lines(deltas)))
@@ -131,7 +122,7 @@ def test_see_streams_deltas_in_order(load, monkeypatch):
 
 def test_chat_streams(load, monkeypatch):
     brain = load("brain")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
     monkeypatch.setattr(brain.requests, "post",
                         lambda *a, **k: FakeSSE(_sse_lines(["Sure. ", "Done."])))
     assert brain.chat([{"role": "user", "content": "hi"}]) == "Sure. Done."
@@ -139,14 +130,14 @@ def test_chat_streams(load, monkeypatch):
 
 def test_see_offline_without_key_raises_brainoffline(load, monkeypatch):
     brain = load("brain")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(brain.BrainOffline):
         brain.see(b"jpeg", "prompt")
 
 
 def test_see_network_failure_raises_brainoffline(load, monkeypatch):
     brain = load("brain")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
 
     def boom(*a, **k):
         raise brain.requests.exceptions.RequestException("no route to host")
@@ -158,7 +149,7 @@ def test_see_network_failure_raises_brainoffline(load, monkeypatch):
 
 def test_see_api_error_raises_runtimeerror(load, monkeypatch):
     brain = load("brain")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
     monkeypatch.setattr(
         brain.requests, "post",
         lambda *a, **k: FakeJSON({"error": {"message": "overloaded"}}, status_code=529))
@@ -170,23 +161,28 @@ def test_tool_schemas_present(load):
     brain = load("brain")
     for tool in (brain.TOOL_SEARCH_MEMORY, brain.TOOL_PHONE_ACTION):
         assert isinstance(tool, dict)
-        assert "name" in tool and "input_schema" in tool
-    assert brain.TOOL_SEARCH_MEMORY["name"] == "search_memory"
-    assert brain.TOOL_PHONE_ACTION["name"] == "phone_action"
+        assert tool["type"] == "function"
+        assert "name" in tool["function"] and "parameters" in tool["function"]
+    assert brain.TOOL_SEARCH_MEMORY["function"]["name"] == "search_memory"
+    assert brain.TOOL_PHONE_ACTION["function"]["name"] == "phone_action"
+
+
+def _tool_call(call_id, name, args):
+    return {"id": call_id, "type": "function",
+            "function": {"name": name, "arguments": json.dumps(args)}}
 
 
 def test_see_runs_tool_loop(load, monkeypatch):
     brain = load("brain")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
     responses = [
-        {"role": "assistant", "stop_reason": "tool_use",
-         "content": [
-             {"type": "text", "text": ""},
-             {"type": "tool_use", "id": "toolu_1", "name": "search_memory",
-              "input": {"query": "room number"}},
-         ]},
-        {"role": "assistant", "stop_reason": "end_turn",
-         "content": [{"type": "text", "text": "The room number was 204."}]},
+        {"choices": [{"finish_reason": "tool_calls", "message": {
+            "role": "assistant", "content": None,
+            "tool_calls": [_tool_call("call_1", "search_memory",
+                                      {"query": "room number"})]}}]},
+        {"choices": [{"finish_reason": "stop", "message": {
+            "role": "assistant",
+            "content": "The room number was 204."}}]},
     ]
     seq = iter(responses)
     monkeypatch.setattr(brain.requests, "post", lambda *a, **k: FakeJSON(next(seq)))

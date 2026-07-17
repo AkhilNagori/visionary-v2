@@ -1,5 +1,5 @@
-"""Cloud brain: Claude vision/chat (streaming SSE + tool-use), Whisper STT,
-Tesseract OCR, connectivity check, and the shared prompt bank.
+"""Cloud brain: OpenAI vision/chat (streaming SSE + function-calling), Whisper
+STT, Tesseract OCR, connectivity check, and the shared prompt bank.
 
 Error contract: BrainOffline = no connectivity / no usable backend (callers
 fall back to the offline path); RuntimeError = a backend answered with an
@@ -20,11 +20,10 @@ import requests
 import state
 import vision
 
-MODEL = os.environ.get("VISIONARY_MODEL", "claude-haiku-4-5")
+MODEL = os.environ.get("VISIONARY_MODEL", "gpt-4o-mini")
 MAX_TOKENS = 1024
-_API_URL = "https://api.anthropic.com/v1/messages"
-_API_HOST = "api.anthropic.com"
-_ANTHROPIC_VERSION = "2023-06-01"
+_API_URL = "https://api.openai.com/v1/chat/completions"
+_API_HOST = "api.openai.com"
 _ONLINE_CACHE_S = 10.0
 _MAX_TOOL_ROUNDS = 5
 
@@ -81,119 +80,135 @@ NAVIGATE_PROMPT = (
 )
 
 # Tier 3 agent tools. Handlers are supplied by the caller (see modes/ask.py);
-# brain.py only defines the Anthropic schemas and drives the tool loop.
+# brain.py only defines the OpenAI function schemas and drives the tool loop.
+# Handlers stay keyed by function name.
 TOOL_SEARCH_MEMORY = {
-    "name": "search_memory",
-    "description": (
-        "Search the wearer's own past captures, readings, and recordings — "
-        "everything Visionary has read or heard for them before. Use this "
-        "when they ask about something seen or heard earlier, like 'what "
-        "room number was on that door?' or 'what did the flyer say?'."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "What to look for in the wearer's history.",
+    "type": "function",
+    "function": {
+        "name": "search_memory",
+        "description": (
+            "Search the wearer's own past captures, readings, and recordings — "
+            "everything Visionary has read or heard for them before. Use this "
+            "when they ask about something seen or heard earlier, like 'what "
+            "room number was on that door?' or 'what did the flyer say?'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to look for in the wearer's history.",
+                },
+                "k": {
+                    "type": "integer",
+                    "description": "How many past items to return (default 5).",
+                },
             },
-            "k": {
-                "type": "integer",
-                "description": "How many past items to return (default 5).",
-            },
+            "required": ["query"],
         },
-        "required": ["query"],
     },
 }
 
 TOOL_PHONE_ACTION = {
-    "name": "phone_action",
-    "description": (
-        "Queue an action on the wearer's paired phone, such as adding a "
-        "calendar event or a reminder. Use this when the wearer asks to "
-        "remember, schedule, or be reminded of something — for example "
-        "'add this flyer's date to my calendar'. Briefly confirm out loud "
-        "after queuing it."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "type": {
-                "type": "string",
-                "enum": ["calendar_event", "reminder"],
-                "description": "calendar_event needs a date; reminder does not.",
+    "type": "function",
+    "function": {
+        "name": "phone_action",
+        "description": (
+            "Queue an action on the wearer's paired phone, such as adding a "
+            "calendar event or a reminder. Use this when the wearer asks to "
+            "remember, schedule, or be reminded of something — for example "
+            "'add this flyer's date to my calendar'. Briefly confirm out loud "
+            "after queuing it."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": ["calendar_event", "reminder"],
+                    "description": "calendar_event needs a date; reminder does not.",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Short title of the event or reminder.",
+                },
+                "date": {
+                    "type": "string",
+                    "description": "ISO 8601 date or datetime, for a calendar_event.",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Optional extra details.",
+                },
             },
-            "title": {
-                "type": "string",
-                "description": "Short title of the event or reminder.",
-            },
-            "date": {
-                "type": "string",
-                "description": "ISO 8601 date or datetime, for a calendar_event.",
-            },
-            "notes": {
-                "type": "string",
-                "description": "Optional extra details.",
-            },
+            "required": ["type", "title"],
         },
-        "required": ["type", "title"],
     },
 }
 
 TOOL_SET_TIMER = {
-    "name": "set_timer",
-    "description": (
-        "Start a named countdown timer for the wearer, e.g. 'set a pasta timer "
-        "for 8 minutes'. When it finishes the glasses announce it out loud. Use "
-        "this whenever the wearer asks to be timed or reminded after a number of "
-        "minutes or seconds. Convert minutes to seconds. Briefly confirm out "
-        "loud after starting it."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "name": {
-                "type": "string",
-                "description": "Short label for the timer, like 'pasta' or 'tea'.",
+    "type": "function",
+    "function": {
+        "name": "set_timer",
+        "description": (
+            "Start a named countdown timer for the wearer, e.g. 'set a pasta timer "
+            "for 8 minutes'. When it finishes the glasses announce it out loud. Use "
+            "this whenever the wearer asks to be timed or reminded after a number of "
+            "minutes or seconds. Convert minutes to seconds. Briefly confirm out "
+            "loud after starting it."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Short label for the timer, like 'pasta' or 'tea'.",
+                },
+                "seconds": {
+                    "type": "number",
+                    "description": "Duration in seconds (convert any minutes given).",
+                },
             },
-            "seconds": {
-                "type": "number",
-                "description": "Duration in seconds (convert any minutes given).",
-            },
+            "required": ["seconds"],
         },
-        "required": ["seconds"],
     },
 }
 
 TOOL_SET_MODE = {
-    "name": "set_mode",
-    "description": (
-        "Switch the glasses into one of the wearer's installed modes by its id, "
-        "so a single press runs that mode — e.g. 'recipe' or 'pokedex'. Use this "
-        "only when the wearer explicitly asks to turn on or switch to a named "
-        "mode. Pass an empty id to go back to classic reading."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "id": {
-                "type": "string",
-                "description": "The mode id to activate, or empty to clear it.",
+    "type": "function",
+    "function": {
+        "name": "set_mode",
+        "description": (
+            "Switch the glasses into one of the wearer's installed modes by its id, "
+            "so a single press runs that mode — e.g. 'recipe' or 'pokedex'. Use this "
+            "only when the wearer explicitly asks to turn on or switch to a named "
+            "mode. Pass an empty id to go back to classic reading."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "The mode id to activate, or empty to clear it.",
+                },
             },
+            "required": ["id"],
         },
-        "required": ["id"],
     },
 }
 
 TOOL_GET_BRIEFING = {
-    "name": "get_briefing",
-    "description": (
-        "Read the wearer a short spoken news briefing from their configured "
-        "feeds. Use this when they ask for their news, headlines, or a briefing. "
-        "The briefing is spoken to them directly, so after calling this just "
-        "confirm very briefly and do not repeat the contents."
-    ),
-    "input_schema": {"type": "object", "properties": {}},
+    "type": "function",
+    "function": {
+        "name": "get_briefing",
+        "description": (
+            "Read the wearer a short spoken news briefing from their configured "
+            "feeds. Use this when they ask for their news, headlines, or a briefing. "
+            "The briefing is spoken to them directly, so after calling this just "
+            "confirm very briefly and do not repeat the contents."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
 }
 
 
@@ -220,7 +235,7 @@ def is_online(force: bool = False) -> bool:
                 and now - _online_cache["ts"] < _ONLINE_CACHE_S):
             return _online_cache["value"]
         value = False
-        if os.environ.get("ANTHROPIC_API_KEY"):
+        if os.environ.get("OPENAI_API_KEY"):
             try:
                 socket.create_connection((_API_HOST, 443), timeout=2.0).close()
                 value = True
@@ -246,12 +261,11 @@ def _api_error_message(resp) -> str:
 
 
 def _post(payload: dict, stream: bool):
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    key = os.environ.get("OPENAI_API_KEY", "")
     if not key:
-        raise BrainOffline("ANTHROPIC_API_KEY not set")
+        raise BrainOffline("OPENAI_API_KEY not set")
     headers = {
-        "x-api-key": key,
-        "anthropic-version": _ANTHROPIC_VERSION,
+        "Authorization": "Bearer " + key,
         "content-type": "application/json",
     }
     if stream:
@@ -264,8 +278,14 @@ def _post(payload: dict, stream: bool):
     if resp.status_code != 200:
         msg = _api_error_message(resp)
         resp.close()
-        raise RuntimeError("Claude API error %s: %s" % (resp.status_code, msg))
+        raise RuntimeError("OpenAI API error %s: %s" % (resp.status_code, msg))
     return resp
+
+
+def _with_system(messages: List[dict], system: Optional[str]) -> List[dict]:
+    if system:
+        return [{"role": "system", "content": system}] + list(messages)
+    return list(messages)
 
 
 def _stream(messages: List[dict], system: Optional[str] = None,
@@ -274,10 +294,8 @@ def _stream(messages: List[dict], system: Optional[str] = None,
         "model": MODEL,
         "max_tokens": MAX_TOKENS,
         "stream": True,
-        "messages": messages,
+        "messages": _with_system(messages, system),
     }
-    if system:
-        payload["system"] = system
     resp = _post(payload, stream=True)
     parts = []
     try:
@@ -285,30 +303,36 @@ def _stream(messages: List[dict], system: Optional[str] = None,
             if not raw or not raw.startswith("data:"):
                 continue
             data = raw[5:].strip()
-            if not data:
+            if not data or data == "[DONE]":
                 continue
             try:
                 event = json.loads(data)
             except ValueError:
                 continue
-            etype = event.get("type")
-            if etype == "content_block_delta":
-                delta = event.get("delta", {})
-                if delta.get("type") == "text_delta":
-                    text = delta.get("text", "")
-                    if text:
-                        parts.append(text)
-                        if on_text is not None:
-                            on_text(text)
-            elif etype == "error":
-                err = event.get("error", {})
-                raise RuntimeError("Claude API error: %s"
-                                   % err.get("message", "stream error"))
+            if event.get("error"):
+                err = event["error"]
+                msg = err.get("message") if isinstance(err, dict) else err
+                raise RuntimeError("OpenAI API error: %s" % (msg or "stream error"))
+            choices = event.get("choices") or []
+            if not choices:
+                continue
+            text = (choices[0].get("delta") or {}).get("content")
+            if text:
+                parts.append(text)
+                if on_text is not None:
+                    on_text(text)
     except requests.exceptions.RequestException as e:
         raise BrainOffline(str(e))
     finally:
         resp.close()
     return "".join(parts)
+
+
+def _message(data: dict) -> dict:
+    choices = data.get("choices") or []
+    if not choices:
+        return {}
+    return choices[0].get("message") or {}
 
 
 def _tool_loop(messages: List[dict], tools: List[dict],
@@ -329,32 +353,37 @@ def _tool_loop(messages: List[dict], tools: List[dict],
             data = resp.json()
         finally:
             resp.close()
-        blocks = data.get("content", []) or []
-        convo.append({"role": "assistant", "content": blocks})
-        if data.get("stop_reason") == "tool_use" and rounds < _MAX_TOOL_ROUNDS:
+        message = _message(data)
+        tool_calls = message.get("tool_calls") or []
+        # Echo the assistant turn back verbatim; OpenAI requires the message
+        # that issued tool_calls to precede the matching tool results.
+        convo.append(message)
+        if tool_calls and rounds < _MAX_TOOL_ROUNDS:
             rounds += 1
-            results = []
-            for block in blocks:
-                if block.get("type") != "tool_use":
-                    continue
-                name = block.get("name", "")
+            for call in tool_calls:
+                fn = call.get("function") or {}
+                name = fn.get("name", "")
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except ValueError:
+                    args = {}
+                if not isinstance(args, dict):
+                    args = {}
                 handler = handlers.get(name)
                 if handler is None:
                     result = "No handler available for tool %s." % name
                 else:
                     try:
-                        result = handler(block.get("input", {}) or {})
+                        result = handler(args)
                     except Exception as e:
                         result = "Tool %s failed: %s" % (name, e)
-                results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.get("id"),
+                convo.append({
+                    "role": "tool",
+                    "tool_call_id": call.get("id"),
                     "content": result or "",
                 })
-            convo.append({"role": "user", "content": results})
             continue
-        text = "".join(b.get("text", "") for b in blocks
-                       if b.get("type") == "text")
+        text = message.get("content") or ""
         if on_text is not None:
             on_text(text)
         return text
@@ -364,18 +393,33 @@ def see(jpeg: bytes, prompt: str, on_text: Optional[Callable[[str], None]] = Non
         history_msgs: Optional[List[dict]] = None,
         tools: Optional[List[dict]] = None,
         tool_handlers: Optional[Dict[str, Callable[[dict], str]]] = None) -> str:
+    data_url = "data:%s;base64,%s" % (
+        _media_type(jpeg), base64.b64encode(jpeg).decode())
     content = [
-        {"type": "image", "source": {
-            "type": "base64",
-            "media_type": _media_type(jpeg),
-            "data": base64.b64encode(jpeg).decode(),
-        }},
         {"type": "text", "text": prompt},
+        {"type": "image_url", "image_url": {"url": data_url}},
     ]
-    messages = list(history_msgs or []) + [{"role": "user", "content": content}]
+    messages = _to_openai_messages(history_msgs) + [
+        {"role": "user", "content": content}]
     if tools:
         return _tool_loop(messages, tools, tool_handlers, on_text)
     return _stream(messages, on_text=on_text)
+
+
+def _to_openai_messages(history_msgs: Optional[List[dict]]) -> List[dict]:
+    """Convert prior text turns to OpenAI messages. Callers pass
+    {"role", "content"} turns with plain-string content (see modes/ask.py),
+    which pass through unchanged; a list content (older block-style) is
+    flattened to its text so history still loads."""
+    out = []
+    for msg in history_msgs or []:
+        content = msg.get("content")
+        if isinstance(content, list):
+            content = "".join(
+                b.get("text", "") for b in content
+                if isinstance(b, dict) and b.get("type") == "text")
+        out.append({"role": msg.get("role", "user"), "content": content})
+    return out
 
 
 def chat(messages: List[dict], system: Optional[str] = None,

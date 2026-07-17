@@ -109,7 +109,7 @@ struct OnboardingView: View {
             .padding(.bottom, 16)
             .accessibilityHint(isLastPage ? "Finishes the introduction." : "Shows the next page.")
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .background(DS.Palette.canvas.ignoresSafeArea())
     }
 
     private func pageView(_ p: Page) -> some View {
@@ -130,7 +130,7 @@ struct OnboardingView: View {
                 .accessibilityHidden(true)
 
                 Text(p.title)
-                    .font(.largeTitle.bold())
+                    .font(DS.Text.hero)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
 
@@ -153,12 +153,7 @@ struct OnboardingView: View {
                             .accessibilityElement(children: .combine)
                         }
                     }
-                    .padding(18)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color(.secondarySystemGroupedBackground))
-                    )
+                    .cardStyle(padding: 18)
                 }
             }
             .padding(.horizontal, 28)

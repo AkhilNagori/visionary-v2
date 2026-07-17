@@ -9,7 +9,6 @@ import pytest
 
 
 def _force_online(monkeypatch, brain, memory):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
     monkeypatch.setenv("OPENAI_API_KEY", "o")
     # Cover both wiring styles (memory calling brain.is_online, or importing it).
     monkeypatch.setattr(brain, "is_online", lambda force=False: True, raising=False)

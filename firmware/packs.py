@@ -419,48 +419,51 @@ def _run_listen(mode):
 # action types too, so packs carries its own phone_action schema + handler and
 # queues via state.get_actions() (which stores any action type verbatim).
 _PHONE_ACTION_TOOL = {
-    "name": "phone_action",
-    "description": (
-        "Queue an action on the wearer's paired phone: an email draft, a text "
-        "message, a note, a calendar event, or a reminder. Use this to hand "
-        "off structured output the wearer asked for, then briefly confirm out "
-        "loud that it is queued. Do not read the full contents back to them."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "type": {
-                "type": "string",
-                "enum": ["email_draft", "send_text", "note",
-                         "calendar_event", "reminder"],
-                "description": "Which kind of action to queue.",
+    "type": "function",
+    "function": {
+        "name": "phone_action",
+        "description": (
+            "Queue an action on the wearer's paired phone: an email draft, a text "
+            "message, a note, a calendar event, or a reminder. Use this to hand "
+            "off structured output the wearer asked for, then briefly confirm out "
+            "loud that it is queued. Do not read the full contents back to them."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": ["email_draft", "send_text", "note",
+                             "calendar_event", "reminder"],
+                    "description": "Which kind of action to queue.",
+                },
+                "to": {
+                    "type": "string",
+                    "description": "Recipient, for email_draft or send_text.",
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "Subject line, for email_draft.",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Body text of the email, message, or note.",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Title, for note, calendar_event, or reminder.",
+                },
+                "date": {
+                    "type": "string",
+                    "description": "ISO 8601 date or datetime, for a calendar_event.",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Extra details, for calendar_event or reminder.",
+                },
             },
-            "to": {
-                "type": "string",
-                "description": "Recipient, for email_draft or send_text.",
-            },
-            "subject": {
-                "type": "string",
-                "description": "Subject line, for email_draft.",
-            },
-            "body": {
-                "type": "string",
-                "description": "Body text of the email, message, or note.",
-            },
-            "title": {
-                "type": "string",
-                "description": "Title, for note, calendar_event, or reminder.",
-            },
-            "date": {
-                "type": "string",
-                "description": "ISO 8601 date or datetime, for a calendar_event.",
-            },
-            "notes": {
-                "type": "string",
-                "description": "Extra details, for calendar_event or reminder.",
-            },
+            "required": ["type"],
         },
-        "required": ["type"],
     },
 }
 

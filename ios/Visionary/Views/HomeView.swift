@@ -1,28 +1,4 @@
 import SwiftUI
-import UIKit
-
-enum Haptics {
-    static func tap() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-    static func selection() { UISelectionFeedbackGenerator().selectionChanged() }
-    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func error() { UINotificationFeedbackGenerator().notificationOccurred(.error) }
-}
-
-struct CardBackground: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color(.secondarySystemGroupedBackground))
-            )
-    }
-}
-
-extension View {
-    func cardStyle() -> some View { modifier(CardBackground()) }
-}
 
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
@@ -31,6 +7,7 @@ struct HomeView: View {
     @State private var inFlightMode: String?
     @State private var actionError: String?
     @State private var showInbox = false
+    @State private var lastEntry: HistoryEntry?
 
     private static let uptimeFormatter: DateComponentsFormatter = {
         let f = DateComponentsFormatter()
@@ -43,7 +20,7 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: DS.Space.l) {
                     statusCard
                     if appState.inboxCount > 0 {
                         inboxBanner
@@ -54,7 +31,7 @@ struct HomeView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .background(DS.Palette.canvas)
             .navigationTitle("Visionary")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { inboxButton }
@@ -62,12 +39,16 @@ struct HomeView: View {
             .refreshable {
                 await appState.refresh()
                 await appState.refreshModes()
+                await loadLastActivity()
             }
             // Re-pull /modes on every visit: a mode activated in the Modes tab
             // (or by voice on the glasses) shows on the card without waiting
             // for the slow poll.
             .onAppear {
-                Task { await appState.refreshModes() }
+                Task {
+                    await appState.refreshModes()
+                    await loadLastActivity()
+                }
             }
             .alert("Couldn't complete that", isPresented: errorBinding) {
                 Button("OK", role: .cancel) {}
@@ -84,45 +65,56 @@ struct HomeView: View {
         Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })
     }
 
+    private func loadLastActivity() async {
+        guard let client = appState.client else { return }
+        if let page = try? await client.history(page: 1, perPage: 1) {
+            lastEntry = page.entries.first
+        }
+    }
+
     // MARK: - Hero status card
 
     @ViewBuilder
     private var statusCard: some View {
         if let status = appState.status {
-            VStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.accentColor.opacity(0.12))
-                            .frame(width: 48, height: 48)
-                        Image(systemName: "eyeglasses")
-                            .font(.title3)
-                            .foregroundStyle(Color.accentColor)
+            VStack(spacing: DS.Space.l) {
+                HStack(spacing: DS.Space.l) {
+                    ZStack(alignment: .topTrailing) {
+                        IconTile(icon: "eyeglasses", tint: .accentColor, size: 64)
+                        StatusDot(color: status.online ? DS.Palette.online : DS.Palette.attention,
+                                  breathing: status.online)
+                            .id(status.online)
+                            .offset(x: 5, y: -5)
                     }
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: DS.Space.xs) {
                         Text("Visionary Glasses")
-                            .font(.headline)
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(status.online ? Color.green : Color.orange)
-                                .frame(width: 8, height: 8)
-                            Text(status.online ? "Online" : "Offline — reading still works")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
+                            .font(DS.Text.title)
+                        Text(status.online ? "Online" : "Offline — reading still works")
+                            .font(DS.Text.subhead)
+                            .foregroundStyle(status.online ? DS.Palette.online : DS.Palette.attention)
                     }
                     Spacer()
-                    if status.recording {
-                        chip(text: "REC", color: .red, icon: "record.circle")
-                    } else if status.busy {
-                        chip(text: "Working", color: .orange, icon: "hourglass")
-                    }
                 }
                 .accessibilityElement(children: .combine)
 
+                if status.recording || status.busy {
+                    HStack(spacing: DS.Space.s) {
+                        if status.recording {
+                            DSBadge(text: "Recording", tint: DS.Palette.danger,
+                                    icon: "record.circle", filled: true)
+                        } else {
+                            DSBadge(text: "Working", tint: DS.Palette.attention, icon: "hourglass")
+                        }
+                        Spacer()
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+
+                lastActivityRow
+
                 Divider()
 
-                VStack(spacing: 8) {
+                VStack(spacing: DS.Space.s) {
                     LabeledContent("Wi-Fi") {
                         Text(status.wifi ?? "Not connected")
                     }
@@ -136,46 +128,73 @@ struct HomeView: View {
                         Text(Self.uptimeFormatter.string(from: max(status.uptime, 60)) ?? "—")
                     }
                 }
-                .font(.subheadline)
+                .font(DS.Text.subhead)
             }
             .cardStyle()
+            .animation(DS.Motion.spring, value: status.recording)
+            .animation(DS.Motion.spring, value: status.busy)
         } else if let error = appState.lastError {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Can't reach the glasses", systemImage: "wifi.exclamationmark")
-                    .font(.headline)
-                    .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: DS.Space.m) {
+                HStack(spacing: DS.Space.m) {
+                    IconTile(icon: "wifi.exclamationmark", tint: DS.Palette.attention, size: 44)
+                    Text("Can't reach the glasses")
+                        .font(DS.Text.cardTitle)
+                }
                 Text(error)
-                    .font(.subheadline)
+                    .font(DS.Text.subhead)
                     .foregroundStyle(.secondary)
                 Text("Make sure the glasses are powered on and on the same network, then pull down to retry.")
-                    .font(.caption)
+                    .font(DS.Text.caption)
                     .foregroundStyle(.tertiary)
             }
             .cardStyle()
+            .accessibilityElement(children: .combine)
         } else {
-            VStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    Circle().fill(Color(.tertiarySystemFill)).frame(width: 48, height: 48)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Visionary Glasses").font(.headline)
-                        Text("Connecting…").font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    ProgressView()
+            HStack(spacing: DS.Space.l) {
+                IconTile(icon: "eyeglasses", tint: .accentColor, size: 64)
+                VStack(alignment: .leading, spacing: DS.Space.xs) {
+                    Text("Visionary Glasses")
+                        .font(DS.Text.title)
+                    Text("Connecting…")
+                        .font(DS.Text.subhead)
+                        .foregroundStyle(.secondary)
                 }
+                Spacer()
+                ProgressView()
             }
             .cardStyle()
+            .accessibilityElement(children: .combine)
             .accessibilityLabel("Connecting to the glasses")
         }
     }
 
-    private func chip(text: String, color: Color, icon: String) -> some View {
-        Label(text, systemImage: icon)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.12), in: Capsule())
+    @ViewBuilder
+    private var lastActivityRow: some View {
+        HStack(spacing: DS.Space.m) {
+            if let entry = lastEntry {
+                IconTile(icon: EntryKindStyle.icon(for: entry.kind),
+                         tint: EntryKindStyle.color(for: entry.kind), size: 32)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(EntryKindStyle.label(for: entry.kind)) · \(TimestampFormat.relative(entry.ts))")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Text(entry.text.split(separator: "\n", omittingEmptySubsequences: true)
+                            .first.map(String.init) ?? "")
+                        .font(DS.Text.subhead)
+                        .lineLimit(1)
+                }
+            } else {
+                IconTile(icon: "sparkles", tint: .accentColor, size: 32)
+                Text("No activity yet — try Read or Describe below.")
+                    .font(DS.Text.subhead)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(lastEntry.map {
+            "Last activity: \(EntryKindStyle.label(for: $0.kind)), \(TimestampFormat.relative($0.ts))"
+        } ?? "No activity yet")
     }
 
     // MARK: - Actions inbox (badge + banner)
@@ -191,9 +210,9 @@ struct HomeView: View {
                         Text("\(min(appState.inboxCount, 99))")
                             .font(.caption2.bold())
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, DS.Space.xs)
                             .padding(.vertical, 1)
-                            .background(Color.red, in: Capsule())
+                            .background(DS.Palette.danger, in: Capsule())
                             .offset(x: 10, y: -8)
                             .accessibilityHidden(true)
                     }
@@ -210,15 +229,8 @@ struct HomeView: View {
             Haptics.tap()
             showInbox = true
         } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color.red.opacity(0.14))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "tray.full.fill")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.red)
-                }
+            HStack(spacing: DS.Space.m) {
+                IconTile(icon: "tray.full.fill", tint: DS.Palette.danger, size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(appState.inboxCount == 1
                          ? "1 action waiting"
@@ -226,7 +238,7 @@ struct HomeView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.primary)
                     Text("Texts, emails, and notes need your OK before they go out.")
-                        .font(.caption)
+                        .font(DS.Text.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -236,7 +248,7 @@ struct HomeView: View {
             }
             .cardStyle()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityHint("Opens the actions inbox.")
     }
 
@@ -247,26 +259,20 @@ struct HomeView: View {
             Haptics.tap()
             appState.selectedTab = .modes
         } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.indigo.opacity(0.14))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: appState.activeMode == nil ? "text.viewfinder" : "wand.and.stars")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(Color.indigo)
-                }
+            HStack(spacing: DS.Space.m) {
+                IconTile(icon: appState.activeMode == nil ? "text.viewfinder" : "wand.and.stars",
+                         tint: DS.Palette.modes, size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Current mode")
-                        .font(.caption)
+                        .font(DS.Text.caption)
                         .foregroundStyle(.secondary)
                     Text(appState.modeDisplayName(appState.activeMode))
-                        .font(.headline)
+                        .font(DS.Text.cardTitle)
                         .foregroundColor(.primary)
                     Text(appState.activeMode == nil
                          ? "Single press reads whatever is in view"
                          : "Single press on the glasses runs this mode")
-                        .font(.caption)
+                        .font(DS.Text.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -276,7 +282,7 @@ struct HomeView: View {
             }
             .cardStyle()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Current mode: \(appState.modeDisplayName(appState.activeMode))")
         .accessibilityHint("Opens the mode gallery to switch modes.")
@@ -286,14 +292,14 @@ struct HomeView: View {
 
     private var actionButtons: some View {
         let layout = typeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(spacing: 12))
-            : AnyLayout(HStackLayout(spacing: 12))
+            ? AnyLayout(VStackLayout(spacing: DS.Space.m))
+            : AnyLayout(HStackLayout(spacing: DS.Space.m))
         return layout {
             BigActionButton(
                 title: "Read",
                 subtitle: "Speak the text in view",
                 icon: "text.viewfinder",
-                tint: .blue,
+                tint: DS.Palette.read,
                 inFlight: inFlightMode == "read",
                 disabled: inFlightMode != nil || appState.client == nil
             ) { trigger("read") }
@@ -302,7 +308,7 @@ struct HomeView: View {
                 title: "Describe",
                 subtitle: "Describe the scene",
                 icon: "eye",
-                tint: .purple,
+                tint: DS.Palette.describe,
                 inFlight: inFlightMode == "describe",
                 disabled: inFlightMode != nil || appState.client == nil
             ) { trigger("describe") }
@@ -313,7 +319,7 @@ struct HomeView: View {
     private func trigger(_ mode: String) {
         guard inFlightMode == nil, let client = appState.client else { return }
         Haptics.tap()
-        inFlightMode = mode
+        withAnimation(DS.Motion.snappy) { inFlightMode = mode }
         Task { @MainActor in
             do {
                 try await client.capture(mode: mode)
@@ -326,7 +332,7 @@ struct HomeView: View {
             }
             // brief linger so a fast round trip still visibly registers
             try? await Task.sleep(nanoseconds: 400_000_000)
-            inFlightMode = nil
+            withAnimation(DS.Motion.snappy) { inFlightMode = nil }
         }
     }
 
@@ -335,16 +341,17 @@ struct HomeView: View {
     private var isRecording: Bool { appState.status?.recording == true }
 
     private var quickActions: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DS.Space.m) {
             Text("Quick actions")
-                .font(.headline)
+                .font(DS.Text.cardTitle)
                 .accessibilityAddTraits(.isHeader)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: DS.Space.m)],
+                      spacing: DS.Space.m) {
                 QuickActionTile(
                     title: isRecording ? "Stop Recording" : "Voice Note",
                     subtitle: isRecording ? "The glasses are recording" : "Record and summarize",
                     icon: isRecording ? "stop.circle.fill" : "waveform",
-                    tint: .pink,
+                    tint: DS.Palette.record,
                     inFlight: inFlightMode == "recorder",
                     disabled: inFlightMode != nil || appState.client == nil
                 ) { trigger("recorder") }
@@ -355,35 +362,35 @@ struct HomeView: View {
                     title: "Live Captions",
                     subtitle: "Read speech around you",
                     icon: "captions.bubble",
-                    tint: .teal
+                    tint: DS.Palette.captions
                 ) { open(.live, live: .captions) }
                     .accessibilityHint("Opens live captions.")
                 QuickActionTile(
                     title: "Guide",
                     subtitle: "See and talk them through",
                     icon: "person.wave.2",
-                    tint: .green
+                    tint: DS.Palette.guide
                 ) { open(.live, live: .guide) }
                     .accessibilityHint("Opens sighted-guide mode.")
                 QuickActionTile(
                     title: "Search Memory",
                     subtitle: "Find anything seen",
                     icon: "sparkle.magnifyingglass",
-                    tint: .orange
+                    tint: DS.Palette.memory
                 ) { open(.library, library: .search) }
                     .accessibilityHint("Opens visual memory search.")
                 QuickActionTile(
                     title: "Flashcards",
                     subtitle: "Review today's deck",
                     icon: "rectangle.on.rectangle.angled",
-                    tint: .purple
+                    tint: DS.Palette.flashcards
                 ) { open(.library, library: .flashcards) }
                     .accessibilityHint("Opens flashcard review.")
                 QuickActionTile(
                     title: "Notes",
                     subtitle: "Captured by voice",
                     icon: "note.text",
-                    tint: .yellow
+                    tint: DS.Palette.notes
                 ) { open(.library, library: .notes) }
                     .accessibilityHint("Opens notes from the glasses.")
             }
@@ -409,28 +416,31 @@ private struct BigActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                if inFlight {
-                    ProgressView()
-                        .controlSize(.large)
-                        .tint(.white)
-                } else {
+            VStack(spacing: DS.Space.s) {
+                ZStack {
                     Image(systemName: icon)
-                        .font(.system(size: 32, weight: .semibold))
+                        .font(.system(size: 30, weight: .semibold))
+                        .opacity(inFlight ? 0 : 1)
+                    if inFlight {
+                        ProgressView()
+                            .tint(.white)
+                    }
                 }
+                .frame(height: 36)
                 Text(title)
-                    .font(.title3.bold())
+                    .font(.system(.title3, design: .rounded).weight(.bold))
                 Text(subtitle)
-                    .font(.caption)
+                    .font(DS.Text.caption)
                     .opacity(0.85)
             }
             .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 130)
+            .frame(maxWidth: .infinity, minHeight: 132)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(tint.gradient)
+                tint.gradient,
+                in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             )
         }
+        .buttonStyle(.pressable)
         .disabled(disabled)
         .opacity(disabled && !inFlight ? 0.5 : 1)
         .accessibilityLabel(inFlight ? "\(title), in progress" : title)
@@ -448,36 +458,31 @@ private struct QuickActionTile: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: DS.Space.s) {
                 ZStack {
-                    Circle()
-                        .fill(tint.opacity(0.15))
-                        .frame(width: 36, height: 36)
+                    IconTile(icon: icon, tint: tint, size: 36)
+                        .opacity(inFlight ? 0 : 1)
                     if inFlight {
                         ProgressView()
                             .controlSize(.small)
                             .tint(tint)
-                    } else {
-                        Image(systemName: icon)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(tint)
                     }
                 }
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.primary)
                 Text(subtitle)
-                    .font(.caption)
+                    .font(DS.Text.caption)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .padding(12)
+            .padding(DS.Space.m)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(.secondarySystemGroupedBackground))
+                DS.Palette.card,
+                in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(disabled)
         .opacity(disabled && !inFlight ? 0.5 : 1)
         .accessibilityElement(children: .ignore)

@@ -24,7 +24,7 @@ struct LiveTabView: View {
             case .guide: GuideView()
             }
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .background(DS.Palette.canvas.ignoresSafeArea())
     }
 
     private static func label(for segment: LiveSegment) -> String {

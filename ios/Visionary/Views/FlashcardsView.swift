@@ -179,29 +179,20 @@ struct FlashcardsView: View {
             reviewScreen(card)
         } else if model.isLoading || model.isGenerating {
             centered {
-                VStack(spacing: 12) {
-                    ProgressView().controlSize(.large)
-                    Text(model.isGenerating ? "Reading today's history…" : "Loading your deck…")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+                LoadingStateView(label: model.isGenerating
+                                 ? "Reading today's history…"
+                                 : "Loading your deck…")
             }
         } else if let error = model.loadError {
             centered {
-                VStack(spacing: 12) {
-                    Image(systemName: "wifi.exclamationmark")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.orange)
-                    Text("Couldn't load flashcards")
-                        .font(.title3.bold())
-                    Text(error)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Button("Try Again") {
-                        Task { await model.loadDue(client: appState.client) }
-                    }
-                    .buttonStyle(.borderedProminent)
+                EmptyStateView(
+                    icon: "wifi.exclamationmark",
+                    tint: DS.Palette.attention,
+                    title: "Couldn't load flashcards",
+                    message: error,
+                    actionTitle: "Try Again"
+                ) {
+                    Task { await model.loadDue(client: appState.client) }
                 }
             }
         } else if model.finishedSession {
@@ -223,15 +214,12 @@ struct FlashcardsView: View {
 
     private var emptyState: some View {
         VStack(spacing: 14) {
-            Image(systemName: "sparkles.rectangle.stack")
-                .font(.system(size: 44))
-                .foregroundStyle(Color.accentColor)
-            Text("Turn today into a deck")
-                .font(.title3.bold())
-            Text("Everything the glasses read today can become question-and-answer cards. Generate a deck now and review it tonight — spaced repetition schedules the rest.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            EmptyStateView(
+                icon: "sparkles.rectangle.stack",
+                tint: DS.Palette.flashcards,
+                title: "Turn today into a deck",
+                message: "Everything the glasses read today can become question-and-answer cards. Generate a deck now and review it tonight — spaced repetition schedules the rest."
+            )
             if let notice = model.generateNotice {
                 Label(notice, systemImage: "info.circle")
                     .font(.caption)
@@ -375,11 +363,11 @@ struct FlashcardsView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(20)
+        .padding(DS.Space.l + DS.Space.xs)
         .frame(maxWidth: .infinity, minHeight: 320)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
+            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .fill(DS.Palette.card)
                 .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
         )
     }
@@ -410,10 +398,11 @@ struct FlashcardsView: View {
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: 52)
                         .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: DS.Radius.control, style: .continuous)
                                 .fill(g.tint.gradient)
                         )
                 }
+                .buttonStyle(.pressable)
                 .disabled(isGrading)
                 .accessibilityHint(g.hint)
             }

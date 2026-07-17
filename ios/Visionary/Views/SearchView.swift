@@ -97,11 +97,11 @@ struct SearchView: View {
                 .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, model.query.isEmpty ? 12 : 2)
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, model.query.isEmpty ? DS.Space.m : 2)
         .background(
-            Color(.secondarySystemGroupedBackground),
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            DS.Palette.card,
+            in: RoundedRectangle(cornerRadius: DS.Radius.control, style: .continuous)
         )
     }
 
@@ -109,44 +109,27 @@ struct SearchView: View {
     private var content: some View {
         if model.isSearching {
             centered {
-                VStack(spacing: 12) {
-                    ProgressView().controlSize(.large)
-                    Text("Searching your memory…")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+                LoadingStateView(label: "Searching your memory…")
             }
         } else if let error = model.searchError {
             centered {
-                VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.orange)
-                    Text("Search didn't go through")
-                        .font(.title3.bold())
-                    Text(error)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Button("Try Again") { model.run(client: appState.client) }
-                        .buttonStyle(.borderedProminent)
-                }
+                EmptyStateView(
+                    icon: "exclamationmark.triangle",
+                    tint: DS.Palette.attention,
+                    title: "Search didn't go through",
+                    message: error,
+                    actionTitle: "Try Again"
+                ) { model.run(client: appState.client) }
             }
         } else if let hits = model.hits {
             if hits.isEmpty {
                 centered {
-                    VStack(spacing: 12) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 40))
-                            .foregroundStyle(.secondary)
-                        Text("No matches for \u{201C}\(model.lastQuery)\u{201D}")
-                            .font(.title3.bold())
-                            .multilineTextAlignment(.center)
-                        Text("Try different words — search covers everything the glasses have spoken aloud.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
+                    EmptyStateView(
+                        icon: "magnifyingglass",
+                        tint: DS.Palette.memory,
+                        title: "No matches for \u{201C}\(model.lastQuery)\u{201D}",
+                        message: "Try different words — search covers everything the glasses have spoken aloud."
+                    )
                 }
             } else {
                 resultsList(hits)
@@ -167,38 +150,37 @@ struct SearchView: View {
 
     private var idleState: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                Image(systemName: "sparkle.magnifyingglass")
-                    .font(.system(size: 44))
-                    .foregroundStyle(Color.accentColor)
-                Text("Your visual memory")
-                    .font(.title3.bold())
-                Text("Everything the glasses read, describe, or answer becomes searchable — even from days ago. Search works offline, too.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                VStack(spacing: 8) {
+            VStack(spacing: DS.Space.l) {
+                EmptyStateView(
+                    icon: "sparkle.magnifyingglass",
+                    tint: DS.Palette.memory,
+                    title: "Your visual memory",
+                    message: "Everything the glasses read, describe, or answer becomes searchable — even from days ago. Search works offline, too."
+                )
+                VStack(spacing: DS.Space.s) {
                     ForEach(Self.suggestions, id: \.self) { suggestion in
                         Button {
+                            Haptics.selection()
                             model.query = suggestion
                             model.run(client: appState.client)
                         } label: {
                             Text("\u{201C}\(suggestion)\u{201D}")
-                                .font(.subheadline)
-                                .padding(.horizontal, 14)
+                                .font(DS.Text.subhead)
+                                .padding(.horizontal, DS.Space.l)
                                 .padding(.vertical, 10)
                                 .background(
                                     Capsule().strokeBorder(Color.accentColor.opacity(0.4))
                                 )
                         }
+                        .buttonStyle(.pressable)
                         .accessibilityHint("Runs this example search.")
                     }
                 }
-                .padding(.top, 4)
+                .padding(.top, DS.Space.xs)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 60)
-            .padding(.horizontal, 32)
+            .padding(.horizontal, DS.Space.xxl)
         }
     }
 
@@ -248,14 +230,8 @@ private struct SearchHitRow: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(Color.accentColor.opacity(0.3 + 0.7 * relevance))
                 .frame(width: 4, height: 40)
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(EntryKindStyle.color(for: hit.entry.kind).opacity(0.15))
-                    .frame(width: 40, height: 40)
-                Image(systemName: EntryKindStyle.icon(for: hit.entry.kind))
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(EntryKindStyle.color(for: hit.entry.kind))
-            }
+            IconTile(icon: EntryKindStyle.icon(for: hit.entry.kind),
+                     tint: EntryKindStyle.color(for: hit.entry.kind))
             VStack(alignment: .leading, spacing: 3) {
                 Text(snippet)
                     .font(.body)

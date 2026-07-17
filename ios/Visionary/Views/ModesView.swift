@@ -188,17 +188,7 @@ struct ModesView: View {
                 } message: {
                     Text(listError ?? "")
                 }
-                .overlay(alignment: .bottom) {
-                    if let toast = toast {
-                        Label(toast, systemImage: "checkmark.circle.fill")
-                            .font(.subheadline.weight(.medium))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(.regularMaterial, in: Capsule())
-                            .padding(.bottom, 12)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                }
+                .dsToast($toast)
                 .task {
                     if model.modes == nil {
                         await model.load(client: appState.client)
@@ -227,48 +217,32 @@ struct ModesView: View {
     // MARK: - States
 
     private var loadingState: some View {
-        VStack(spacing: 12) {
-            ProgressView().controlSize(.large)
-            Text("Loading modes from the glasses…")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        LoadingStateView(label: "Loading modes from the glasses…")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func errorState(_ error: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 40))
-                .foregroundStyle(.orange)
-            Text("Couldn't load modes")
-                .font(.title3.bold())
-            Text(error)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button("Try Again") {
-                Task { await model.load(client: appState.client) }
-            }
-            .buttonStyle(.borderedProminent)
+        EmptyStateView(
+            icon: "wifi.exclamationmark",
+            tint: DS.Palette.attention,
+            title: "Couldn't load modes",
+            message: error,
+            actionTitle: "Try Again"
+        ) {
+            Task { await model.load(client: appState.client) }
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, DS.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var unpairedState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "square.grid.2x2")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-            Text("No glasses connected")
-                .font(.title3.bold())
-            Text("Pair with your Visionary glasses to browse and activate modes.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.horizontal, 32)
+        EmptyStateView(
+            icon: "square.grid.2x2",
+            tint: DS.Palette.modes,
+            title: "No glasses connected",
+            message: "Pair with your Visionary glasses to browse and activate modes."
+        )
+        .padding(.horizontal, DS.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -347,14 +321,9 @@ struct ModesView: View {
         if let mode = model.activeMode {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(ModeStyle.categoryColor(mode.category).gradient)
-                            .frame(width: 48, height: 48)
-                        Image(systemName: ModeStyle.categoryIcon(mode.category))
-                            .font(.title3)
-                            .foregroundStyle(.white)
-                    }
+                    IconTile(icon: ModeStyle.categoryIcon(mode.category),
+                             tint: ModeStyle.categoryColor(mode.category),
+                             size: 48, prominent: true)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(mode.name)
                             .font(.headline)
@@ -364,12 +333,7 @@ struct ModesView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text("ACTIVE")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(Color.accentColor)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.accentColor.opacity(0.12), in: Capsule())
+                    DSBadge(text: "Active", tint: .accentColor)
                 }
                 .accessibilityElement(children: .combine)
                 Button(action: deactivate) {
@@ -389,14 +353,8 @@ struct ModesView: View {
             .padding(.vertical, 4)
         } else {
             HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.blue.gradient)
-                        .frame(width: 48, height: 48)
-                    Image(systemName: "text.viewfinder")
-                        .font(.title3)
-                        .foregroundStyle(.white)
-                }
+                IconTile(icon: "text.viewfinder", tint: DS.Palette.read,
+                         size: 48, prominent: true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Classic reading")
                         .font(.headline)
@@ -426,12 +384,7 @@ struct ModesView: View {
     }
 
     private func showToast(_ text: String) {
-        withAnimation { toast = text }
-        UIAccessibility.post(notification: .announcement, argument: text)
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            withAnimation { if toast == text { toast = nil } }
-        }
+        toast = text   // .dsToast announces, floats in, and auto-dismisses
     }
 }
 
@@ -444,14 +397,8 @@ private struct ModeRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(ModeStyle.categoryColor(mode.category).opacity(0.15))
-                    .frame(width: 40, height: 40)
-                Image(systemName: ModeStyle.categoryIcon(mode.category))
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(ModeStyle.categoryColor(mode.category))
-            }
+            IconTile(icon: ModeStyle.categoryIcon(mode.category),
+                     tint: ModeStyle.categoryColor(mode.category))
             VStack(alignment: .leading, spacing: 3) {
                 Text(mode.name)
                     .font(.body.weight(isActive ? .semibold : .regular))
@@ -471,12 +418,7 @@ private struct ModeRow: View {
             if isSwitching {
                 ProgressView()
             } else if isActive {
-                Text("ACTIVE")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+                DSBadge(text: "Active", tint: .accentColor)
             } else {
                 Image(systemName: "chevron.forward")
                     .font(.caption.weight(.semibold))
@@ -544,33 +486,18 @@ private struct ModeDetailSheet: View {
 
     private var hero: some View {
         VStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(ModeStyle.categoryColor(mode.category).gradient)
-                    .frame(width: 84, height: 84)
-                Image(systemName: ModeStyle.categoryIcon(mode.category))
-                    .font(.system(size: 38))
-                    .foregroundStyle(.white)
-            }
-            .accessibilityHidden(true)
+            IconTile(icon: ModeStyle.categoryIcon(mode.category),
+                     tint: ModeStyle.categoryColor(mode.category),
+                     size: 84, prominent: true)
             Text(mode.name)
-                .font(.title2.bold())
+                .font(DS.Text.title)
                 .multilineTextAlignment(.center)
             HStack(spacing: 6) {
-                Label(ModeStyle.categoryLabel(mode.category),
-                      systemImage: ModeStyle.categoryIcon(mode.category))
-                    .font(.caption.weight(.medium))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(ModeStyle.categoryColor(mode.category).opacity(0.12), in: Capsule())
-                    .foregroundStyle(ModeStyle.categoryColor(mode.category))
+                DSBadge(text: ModeStyle.categoryLabel(mode.category),
+                        tint: ModeStyle.categoryColor(mode.category),
+                        icon: ModeStyle.categoryIcon(mode.category))
                 if isActive {
-                    Text("ACTIVE")
-                        .font(.caption.weight(.bold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.accentColor.opacity(0.12), in: Capsule())
-                        .foregroundStyle(Color.accentColor)
+                    DSBadge(text: "Active", tint: .accentColor)
                 }
             }
         }
@@ -714,17 +641,7 @@ private struct PacksSheet: View {
             } message: {
                 Text("Its modes disappear from the glasses. You can reinstall the pack any time.")
             }
-            .overlay(alignment: .bottom) {
-                if let toast = toast {
-                    Label(toast, systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.weight(.medium))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(.regularMaterial, in: Capsule())
-                        .padding(.bottom, 12)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
+            .dsToast($toast)
         }
     }
 
@@ -881,13 +798,8 @@ private struct PacksSheet: View {
 
     private func packRow(_ pack: Pack) -> some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.12))
-                    .frame(width: 40, height: 40)
-                Image(systemName: pack.builtin ? "shippingbox.fill" : "shippingbox")
-                    .foregroundStyle(Color.accentColor)
-            }
+            IconTile(icon: pack.builtin ? "shippingbox.fill" : "shippingbox",
+                     tint: .accentColor)
             VStack(alignment: .leading, spacing: 3) {
                 Text(pack.name)
                     .font(.body)
@@ -899,12 +811,7 @@ private struct PacksSheet: View {
             if model.removingPackName == pack.name {
                 ProgressView()
             } else if pack.builtin {
-                Text("Built-in")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color(.tertiarySystemFill), in: Capsule())
+                DSBadge(text: "Built-in", tint: .gray)
             }
         }
         .padding(.vertical, 2)
@@ -949,12 +856,7 @@ private struct PacksSheet: View {
     }
 
     private func showToast(_ text: String) {
-        withAnimation { toast = text }
-        UIAccessibility.post(notification: .announcement, argument: text)
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            withAnimation { if toast == text { toast = nil } }
-        }
+        toast = text   // .dsToast announces, floats in, and auto-dismisses
     }
 }
 

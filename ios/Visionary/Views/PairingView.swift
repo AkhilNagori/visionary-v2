@@ -2,6 +2,10 @@ import SwiftUI
 import AVFoundation
 import VisionKit
 
+/// AirPods-style pairing: a radar hero searches the network, discovered
+/// glasses spring in as cards, one tap asks for the spoken 6-digit code, and
+/// success is a full-screen moment (RootView's splash). QR scan and manual
+/// URL+code entry remain as fallback paths.
 struct PairingView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var discovery = DeviceDiscovery()
@@ -9,52 +13,44 @@ struct PairingView: View {
     @State private var showScanner = false
     @State private var cameraMessage: String?
     @State private var isPairing = false
-
-    @State private var showCodePrompt = false
     @State private var codePromptDevice: DiscoveredDevice?
-    @State private var codeInput = ""
+    @State private var showManual = false
 
     @State private var manualAddress = ""
     @State private var manualCode = ""
 
     var body: some View {
         ZStack {
-            Color(.systemGroupedBackground).ignoresSafeArea()
+            DS.Palette.canvas.ignoresSafeArea()
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: DS.Space.xl) {
                     header
-                    if let error = appState.lastError, !isPairing {
+                    if let error = appState.lastError, !isPairing, codePromptDevice == nil {
                         errorCard(error)
                     }
+                    nearbySection
                     scanCard
-                    nearbyCard
-                    manualCard
+                    manualSection
                 }
                 .padding()
             }
             .scrollDismissesKeyboard(.interactively)
-            if isPairing {
+            if isPairing && codePromptDevice == nil {
                 pairingOverlay
             }
         }
+        .animation(DS.Motion.spring, value: discovery.devices)
+        .animation(DS.Motion.gentle, value: showManual)
         .onAppear { discovery.start() }
         .onDisappear { discovery.stop() }
         .sheet(isPresented: $showScanner) {
             ScannerSheet { payload in pair(payload) }
         }
-        .alert("Enter Pairing Code", isPresented: $showCodePrompt) {
-            TextField("6-digit code", text: $codeInput)
-                .keyboardType(.numberPad)
-            Button("Connect") {
-                if let device = codePromptDevice {
-                    pair(PairingPayload(url: device.url.absoluteString,
-                                        token: codeInput.trimmingCharacters(in: .whitespaces)))
-                }
-                codeInput = ""
+        .sheet(item: $codePromptDevice) { device in
+            CodeEntrySheet(device: device, isPairing: $isPairing) { code in
+                pair(PairingPayload(url: device.url.absoluteString, token: code))
             }
-            Button("Cancel", role: .cancel) { codeInput = "" }
-        } message: {
-            Text("The glasses speak this code aloud the first time they start. It's also on the setup sheet.")
+            .presentationDetents([.medium, .large])
         }
         .alert("Camera Unavailable", isPresented: cameraMessageBinding) {
             Button("OK", role: .cancel) {}
@@ -67,59 +63,94 @@ struct PairingView: View {
         Binding(get: { cameraMessage != nil }, set: { if !$0 { cameraMessage = nil } })
     }
 
-    // MARK: - Sections
+    // MARK: - Radar hero
 
     private var header: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.12))
-                    .frame(width: 88, height: 88)
-                Image(systemName: "eyeglasses")
-                    .font(.system(size: 40))
-                    .foregroundStyle(Color.accentColor)
-            }
-            .accessibilityHidden(true)
-            Text("Welcome to Visionary")
-                .font(.title.bold())
+        VStack(spacing: DS.Space.l) {
+            RadarView(searching: discovery.devices.isEmpty)
+            Text(discovery.devices.isEmpty ? "Looking for your glasses" : "Glasses found")
+                .font(DS.Text.hero)
                 .multilineTextAlignment(.center)
-            Text("Let's connect this phone to your glasses. Everything stays on your local network — no accounts, no cloud.")
-                .font(.subheadline)
+            Text(discovery.devices.isEmpty
+                 ? "Power the glasses on and keep them on the same Wi-Fi as this phone. They'll appear here on their own."
+                 : "Tap your glasses below, then enter the 6-digit code they speak aloud.")
+                .font(DS.Text.subhead)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(.top, 24)
+        .padding(.top, DS.Space.l)
+        .accessibilityElement(children: .combine)
     }
 
     private func errorCard(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+        HStack(alignment: .top, spacing: DS.Space.m) {
+            IconTile(icon: "exclamationmark.triangle.fill", tint: DS.Palette.attention, size: 32)
             Text(message)
-                .font(.subheadline)
+                .font(DS.Text.subhead)
                 .foregroundStyle(.secondary)
         }
         .cardStyle()
         .accessibilityElement(children: .combine)
     }
 
+    // MARK: - Discovered devices
+
+    @ViewBuilder
+    private var nearbySection: some View {
+        if !discovery.devices.isEmpty {
+            VStack(spacing: DS.Space.m) {
+                ForEach(discovery.devices) { device in
+                    deviceCard(device)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                }
+            }
+        }
+    }
+
+    private func deviceCard(_ device: DiscoveredDevice) -> some View {
+        Button {
+            Haptics.tap()
+            appState.lastError = nil
+            codePromptDevice = device
+        } label: {
+            HStack(spacing: DS.Space.l) {
+                IconTile(icon: "eyeglasses", tint: .accentColor, size: 52, prominent: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(device.name)
+                        .font(DS.Text.cardTitle)
+                        .foregroundColor(.primary)
+                    Text(device.url.host ?? device.url.absoluteString)
+                        .font(DS.Text.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("Connect")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, DS.Space.l)
+                    .padding(.vertical, DS.Space.s)
+                    .background(Color.accentColor, in: Capsule())
+            }
+            .cardStyle()
+        }
+        .buttonStyle(.pressable)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Connect to \(device.name)")
+        .accessibilityHint("Asks for this device's 6-digit pairing code.")
+    }
+
+    // MARK: - Fallback paths
+
     private var scanCard: some View {
         Button(action: openScanner) {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.accentColor)
-                        .frame(width: 52, height: 52)
-                    Image(systemName: "qrcode.viewfinder")
-                        .font(.title2)
-                        .foregroundStyle(.white)
-                }
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: DS.Space.l) {
+                IconTile(icon: "qrcode.viewfinder", tint: DS.Palette.captions, size: 44)
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Scan Pairing Code")
-                        .font(.headline)
+                        .font(DS.Text.cardTitle)
                         .foregroundColor(.primary)
                     Text("The QR code on the setup sheet, or pairing_qr.png on the glasses.")
-                        .font(.caption)
+                        .font(DS.Text.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
                 }
@@ -128,66 +159,39 @@ struct PairingView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
+            .cardStyle()
         }
-        .cardStyle()
+        .buttonStyle(.pressable)
         .accessibilityHint("Opens the camera to scan the pairing QR code.")
     }
 
-    private var nearbyCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Glasses Nearby", systemImage: "antenna.radiowaves.left.and.right")
-                .font(.headline)
-            if discovery.devices.isEmpty {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text("Looking for glasses on your network…")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+    private var manualSection: some View {
+        VStack(spacing: DS.Space.m) {
+            Button {
+                Haptics.selection()
+                showManual.toggle()
+            } label: {
+                HStack(spacing: DS.Space.s) {
+                    Text("Pair manually")
+                        .font(.subheadline.weight(.medium))
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .rotationEffect(.degrees(showManual ? 180 : 0))
                 }
-                Text("Make sure the glasses are powered on and on the same Wi-Fi as this phone.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            } else {
-                ForEach(discovery.devices) { device in
-                    Button {
-                        codePromptDevice = device
-                        codeInput = ""
-                        showCodePrompt = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "eyeglasses")
-                                .foregroundStyle(Color.accentColor)
-                                .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(device.name)
-                                    .font(.body)
-                                    .foregroundColor(.primary)
-                                Text(device.url.host ?? device.url.absoluteString)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.forward")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .accessibilityHint("Asks for this device's 6-digit pairing code.")
-                    if device.id != discovery.devices.last?.id {
-                        Divider()
-                    }
-                }
+                .foregroundStyle(.secondary)
+                .frame(minHeight: 44)
+            }
+            .accessibilityHint(showManual ? "Hides the manual address form."
+                                          : "Shows a form to type the glasses' address and code.")
+            if showManual {
+                manualCard
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .cardStyle()
     }
 
     private var manualCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Enter Manually", systemImage: "keyboard")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: DS.Space.m) {
             TextField("Device address (visionary.local)", text: $manualAddress)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
@@ -199,14 +203,15 @@ struct PairingView: View {
                 .textFieldStyle(.roundedBorder)
             Button(action: manualPair) {
                 Text("Connect")
-                    .frame(maxWidth: .infinity, minHeight: 32)
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(.borderedProminent)
             .disabled(manualAddress.trimmingCharacters(in: .whitespaces).isEmpty
                       || manualCode.trimmingCharacters(in: .whitespaces).isEmpty
                       || isPairing)
             Text("The glasses speak their 6-digit code out loud the first time they start.")
-                .font(.caption)
+                .font(DS.Text.caption)
                 .foregroundStyle(.tertiary)
         }
         .cardStyle()
@@ -215,13 +220,14 @@ struct PairingView: View {
     private var pairingOverlay: some View {
         ZStack {
             Color.black.opacity(0.25).ignoresSafeArea()
-            VStack(spacing: 12) {
+            VStack(spacing: DS.Space.m) {
                 ProgressView().controlSize(.large)
                 Text("Connecting to your glasses…")
                     .font(.subheadline.weight(.medium))
             }
-            .padding(24)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(DS.Space.xl)
+            .background(.regularMaterial,
+                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Connecting to your glasses")
@@ -230,6 +236,7 @@ struct PairingView: View {
     // MARK: - Actions
 
     private func openScanner() {
+        Haptics.tap()
         guard DataScannerViewController.isSupported else {
             cameraMessage = "This device can't scan QR codes. Use a nearby device or manual entry instead."
             return
@@ -284,10 +291,91 @@ struct PairingView: View {
         Task { @MainActor in
             let ok = await appState.pair(payload: payload)
             isPairing = false
-            if ok {
-                Haptics.success()
-            } else {
+            if !ok {
                 Haptics.error()
+            }
+            // success haptic + moment live in RootView's PairSuccessSplash
+        }
+    }
+}
+
+// MARK: - Code entry
+
+/// Focused one-thing screen: the device you tapped, a large code field, and a
+/// Connect button. Errors from a failed attempt surface right here.
+private struct CodeEntrySheet: View {
+    let device: DiscoveredDevice
+    @Binding var isPairing: Bool
+    let onConnect: (String) -> Void
+
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var code = ""
+    @FocusState private var focused: Bool
+
+    private var trimmedCode: String {
+        code.trimmingCharacters(in: .whitespaces)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: DS.Space.xl) {
+                    IconTile(icon: "eyeglasses", tint: .accentColor, size: 64, prominent: true)
+                    VStack(spacing: DS.Space.s) {
+                        Text(device.name)
+                            .font(DS.Text.title)
+                            .multilineTextAlignment(.center)
+                        Text("Enter the 6-digit code the glasses speak aloud when they start. It's also on the setup sheet.")
+                            .font(DS.Text.subhead)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    TextField("6-digit code", text: $code)
+                        .keyboardType(.numberPad)
+                        .font(Font.system(.title, design: .rounded).weight(.semibold).monospacedDigit())
+                        .multilineTextAlignment(.center)
+                        .padding(.vertical, DS.Space.m)
+                        .background(
+                            DS.Palette.fill,
+                            in: RoundedRectangle(cornerRadius: DS.Radius.control, style: .continuous)
+                        )
+                        .focused($focused)
+                        .accessibilityLabel("6-digit pairing code")
+                    if let error = appState.lastError, !isPairing {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(DS.Text.caption)
+                            .foregroundStyle(DS.Palette.attention)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Button {
+                        Haptics.tap()
+                        onConnect(trimmedCode)
+                    } label: {
+                        Group {
+                            if isPairing {
+                                ProgressView().tint(.white)
+                            } else {
+                                Text("Connect")
+                            }
+                        }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(trimmedCode.isEmpty || isPairing)
+                }
+                .padding(DS.Space.xl)
+            }
+            .background(DS.Palette.canvas)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .onAppear {
+                appState.lastError = nil
+                focused = true
             }
         }
     }
@@ -311,10 +399,10 @@ private struct ScannerSheet: View {
                          ? "That's not a Visionary pairing code."
                          : "Point the camera at the pairing QR code.")
                         .font(.subheadline.weight(.medium))
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, DS.Space.l)
                         .padding(.vertical, 10)
                         .background(.regularMaterial, in: Capsule())
-                        .padding(.bottom, 24)
+                        .padding(.bottom, DS.Space.xl)
                 }
                 .navigationTitle("Scan Pairing Code")
                 .navigationBarTitleDisplayMode(.inline)
@@ -378,5 +466,38 @@ private struct QRScannerRepresentable: UIViewControllerRepresentable {
                 }
             }
         }
+    }
+}
+
+// MARK: - Radar
+
+/// Concentric rings exhale outward from a glasses tile while searching, and
+/// settle to a calm badge once something is found.
+private struct RadarView: View {
+    let searching: Bool
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            if searching {
+                ForEach(0..<3, id: \.self) { ring in
+                    Circle()
+                        .stroke(Color.accentColor.opacity(0.3), lineWidth: 1.5)
+                        .frame(width: 110, height: 110)
+                        .scaleEffect(pulse ? 2.1 : 0.85)
+                        .opacity(pulse ? 0 : 0.9)
+                        .animation(
+                            .easeOut(duration: 2.4)
+                                .repeatForever(autoreverses: false)
+                                .delay(Double(ring) * 0.8),
+                            value: pulse
+                        )
+                }
+            }
+            IconTile(icon: "eyeglasses", tint: .accentColor, size: 96)
+        }
+        .frame(height: 190)
+        .onAppear { pulse = true }
+        .accessibilityHidden(true)
     }
 }

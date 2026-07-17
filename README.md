@@ -27,7 +27,7 @@ Docs:
 
 ## Put it on a Raspberry Pi — exact steps
 
-You need: a Raspberry Pi Zero 2 W, a microSD card (8GB or larger), a computer with [Raspberry Pi Imager](https://www.raspberrypi.com/software/) installed, your WiFi name and password, and an Anthropic API key. Wire the hardware per `HARDWARE_TUTORIAL.md` (camera, I2S amp and mic, button); the software boots and speaks even before the button and camera are wired, so you can test as you go.
+You need: a Raspberry Pi Zero 2 W, a microSD card (8GB or larger), a computer with [Raspberry Pi Imager](https://www.raspberrypi.com/software/) installed, your WiFi name and password, and an OpenAI API key. Wire the hardware per `HARDWARE_TUTORIAL.md` (camera, I2S amp and mic, button); the software boots and speaks even before the button and camera are wired, so you can test as you go.
 
 ### 1. Flash the SD card
 
@@ -62,20 +62,19 @@ sudo bash firmware/setup.sh --with-whisper --with-wakeword
 
 `--with-whisper` builds offline speech-to-text (takes ~10 minutes on the Zero 2 W). `--with-wakeword` installs the hands-free "Hey Jarvis" trigger. Both are optional; the script is idempotent, so re-run it any time to add a flag.
 
-### 4. Add your API keys
+### 4. Add your API key
 
 ```
 sudo nano /etc/visionary.env
 ```
 
-Set these two lines, then Ctrl+O, Enter, Ctrl+X to save and exit:
+Set this line, then Ctrl+O, Enter, Ctrl+X to save and exit:
 
 ```
-ANTHROPIC_API_KEY=sk-ant-your-key-here
 OPENAI_API_KEY=sk-your-key-here
 ```
 
-`ANTHROPIC_API_KEY` is required (vision and chat — get one at console.anthropic.com; $5 of credit covers hundreds of reads). `OPENAI_API_KEY` is optional: it enables cloud Whisper speech-to-text and the embeddings behind visual memory search.
+`OPENAI_API_KEY` is required: it powers vision and chat, Whisper speech-to-text, and the embeddings behind visual memory search. Get one at platform.openai.com; $5 of credit covers hundreds of reads.
 
 ### 5. Reboot and verify
 

@@ -13,7 +13,7 @@ R1 today ($199): voice AI chat, magic camera (vision Q&A), translation, voice re
 ## Tier 2 — unlocked by the $7 INMP441 mic (order tonight)
 
 6. **Ask about what you see** (hold button, talk): "which of these is gluten free?", "summarize this page", "what's the wifi password on that sign?" Photo + your question → spoken answer. *This is the R1's core loop, but head-mounted.*
-7. **Voice assistant**: general Q&A, no camera needed. Whisper API (or local whisper.cpp tiny for offline) → Claude → Piper.
+7. **Voice assistant**: general Q&A, no camera needed. Whisper API (or local whisper.cpp tiny for offline) → OpenAI → Piper.
 8. **Magic recorder equivalent**: triple-press to record a lecture/convo → transcript + AI summary spoken back or saved. (R1's newest headline feature — matched.)
 9. **Two-way translation conversations**: they speak Spanish, you hear English; you speak, it speaks Spanish out the speaker.
 

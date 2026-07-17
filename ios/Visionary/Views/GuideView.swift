@@ -104,9 +104,10 @@ struct GuideView: View {
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 12)
+                .animation(DS.Motion.spring, value: log.count)
             }
             .onChange(of: log.last?.id) { _ in
-                withAnimation(.easeOut(duration: 0.25)) {
+                withAnimation(DS.Motion.gentle) {
                     proxy.scrollTo(log.last?.id, anchor: .bottom)
                 }
             }
@@ -151,11 +152,13 @@ struct GuideView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                             .fill(exchange.role == .guide
                                   ? AnyShapeStyle(Color.accentColor.gradient)
-                                  : AnyShapeStyle(Color(.secondarySystemGroupedBackground)))
+                                  : AnyShapeStyle(DS.Palette.card))
                     )
+                    .transition(.scale(scale: 0.9, anchor: exchange.role == .guide ? .bottomTrailing : .bottomLeading)
+                        .combined(with: .opacity))
             }
             if exchange.role == .wearer { Spacer(minLength: 40) }
         }
@@ -194,6 +197,7 @@ struct GuideView: View {
                                 Capsule().strokeBorder(Color.accentColor.opacity(0.4))
                             )
                     }
+                    .buttonStyle(.pressable)
                     .disabled(isSending || appState.client == nil)
                     .accessibilityHint("Speaks this phrase in the wearer's ear immediately.")
                 }
@@ -298,18 +302,13 @@ struct GuideView: View {
     // MARK: - Unpaired
 
     private var unpairedState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "eye.slash")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-            Text("No glasses connected")
-                .font(.title3.bold())
-            Text("Pair with your Visionary glasses to see what the wearer sees and speak in their ear.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.horizontal, 32)
+        EmptyStateView(
+            icon: "eye.slash",
+            tint: DS.Palette.guide,
+            title: "No glasses connected",
+            message: "Pair with your Visionary glasses to see what the wearer sees and speak in their ear."
+        )
+        .padding(.horizontal, DS.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

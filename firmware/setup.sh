@@ -91,11 +91,9 @@ mkdir -p "$APP"
 rsync -a --delete --exclude '__pycache__' --exclude '*.pyc' "$APP_SRC/" "$APP/"
 
 touch /etc/visionary.env
-# Add placeholders only when absent — never clobber keys the operator already set.
-grep -q '^ANTHROPIC_API_KEY=' /etc/visionary.env || \
-  echo 'ANTHROPIC_API_KEY=PUT_YOUR_KEY_HERE' >> /etc/visionary.env
+# Add the placeholder only when absent — never clobber a key the operator set.
 grep -q '^OPENAI_API_KEY=' /etc/visionary.env || \
-  echo 'OPENAI_API_KEY=' >> /etc/visionary.env
+  echo 'OPENAI_API_KEY=PUT_YOUR_KEY_HERE' >> /etc/visionary.env
 chmod 600 /etc/visionary.env
 
 echo "== 7/7 services (firmware + local API + avahi) =="
@@ -148,7 +146,7 @@ fi
 
 echo
 echo "Setup complete. Next steps:"
-echo "  1. Put your API keys in /etc/visionary.env (ANTHROPIC_API_KEY required, OPENAI_API_KEY optional)"
+echo "  1. Put your API key in /etc/visionary.env (OPENAI_API_KEY required)"
 echo "  2. Reboot to load the I2S audio overlay:  sudo reboot"
 echo "  3. After reboot the device speaks 'Visionary ready' and, on first boot, its 6-digit pairing code"
 echo "     (QR image at $HOME_DIR/pairing_qr.png for the iOS app)"

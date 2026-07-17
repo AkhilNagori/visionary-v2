@@ -146,26 +146,23 @@ struct NotesView: View {
 
     private var emptyState: some View {
         ScrollView {
-            VStack(spacing: 12) {
-                Image(systemName: "note.text")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.orange)
-                Text("No notes yet")
-                    .font(.title3.bold())
-                Text("Say \u{201C}take a note\u{201D} to the glasses — it lands in the Actions inbox, and saving it from there puts it here. Notes stay on this phone.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+            VStack(spacing: DS.Space.m) {
+                EmptyStateView(
+                    icon: "note.text",
+                    tint: DS.Palette.notes,
+                    title: "No notes yet",
+                    message: "Say \u{201C}take a note\u{201D} to the glasses — it lands in the Actions inbox, and saving it from there puts it here. Notes stay on this phone."
+                )
                 if let error = store.storeError {
                     Label(error, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .padding(.top, 8)
+                        .font(DS.Text.caption)
+                        .foregroundStyle(DS.Palette.attention)
+                        .padding(.top, DS.Space.s)
                 }
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 100)
-            .padding(.horizontal, 32)
+            .padding(.horizontal, DS.Space.xxl)
         }
     }
 
@@ -311,14 +308,8 @@ private struct NoteDetailView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(Color.orange.opacity(0.15))
-                    .frame(width: 44, height: 44)
-                Image(systemName: "note.text")
-                    .foregroundStyle(.orange)
-            }
+        HStack(spacing: DS.Space.m) {
+            IconTile(icon: "note.text", tint: DS.Palette.notes, size: 44)
             VStack(alignment: .leading, spacing: 2) {
                 Text(note.displayTitle)
                     .font(.headline)

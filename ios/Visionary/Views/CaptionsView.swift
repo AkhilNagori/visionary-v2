@@ -89,9 +89,8 @@ struct CaptionsView: View {
 
     private var statusBar: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 9, height: 9)
+            StatusDot(color: statusColor, breathing: source.state == .open)
+                .id(source.state == .open)
             Text(statusText)
                 .font(.footnote.weight(.medium))
                 .foregroundColor(Color(white: 0.75))

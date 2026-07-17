@@ -1,6 +1,6 @@
 # Dev/test dependencies (make venv). The Pi gets its runtime deps in setup.sh:
 # apt (picamera2, gpiozero, requests, Pillow, numpy, pytesseract) + pip (piper-tts, fastapi, uvicorn, qrcode).
-requests   # Pi: apt python3-requests | dev: Claude/Whisper HTTP + SSE streaming
+requests   # Pi: apt python3-requests | dev: OpenAI/Whisper HTTP + SSE streaming
 fastapi    # Pi: pip in setup.sh   | dev: api.py + dashboard app under test
 uvicorn    # Pi: pip in setup.sh   | dev: run api.py / dashboard locally
 httpx      # dev only              : fastapi TestClient transport (test_api.py, test_dashboard.py)

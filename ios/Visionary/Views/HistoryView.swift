@@ -135,40 +135,23 @@ struct HistoryView: View {
     @ViewBuilder
     private var stateView: some View {
         if model.isLoading {
-            VStack(spacing: 12) {
-                ProgressView().controlSize(.large)
-                Text("Loading history…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            LoadingStateView(label: "Loading history…")
         } else if let error = model.loadError {
-            VStack(spacing: 12) {
-                Image(systemName: "wifi.exclamationmark")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.orange)
-                Text("Couldn't load history")
-                    .font(.title3.bold())
-                Text(error)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Button("Try Again") {
-                    Task { await model.loadFirstPage(client: appState.client) }
-                }
-                .buttonStyle(.borderedProminent)
+            EmptyStateView(
+                icon: "wifi.exclamationmark",
+                tint: DS.Palette.attention,
+                title: "Couldn't load history",
+                message: error,
+                actionTitle: "Try Again"
+            ) {
+                Task { await model.loadFirstPage(client: appState.client) }
             }
         } else {
-            VStack(spacing: 12) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-                Text("Nothing here yet")
-                    .font(.title3.bold())
-                Text("When the glasses read a page, describe a scene, or answer a question, it shows up here.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+            EmptyStateView(
+                icon: "clock.arrow.circlepath",
+                title: "Nothing here yet",
+                message: "When the glasses read a page, describe a scene, or answer a question, it shows up here."
+            )
         }
     }
 
@@ -212,15 +195,9 @@ struct HistoryRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(EntryKindStyle.color(for: entry.kind).opacity(0.15))
-                    .frame(width: 40, height: 40)
-                Image(systemName: EntryKindStyle.icon(for: entry.kind))
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(EntryKindStyle.color(for: entry.kind))
-            }
+        HStack(spacing: DS.Space.m) {
+            IconTile(icon: EntryKindStyle.icon(for: entry.kind),
+                     tint: EntryKindStyle.color(for: entry.kind))
             VStack(alignment: .leading, spacing: 3) {
                 Text(firstLine)
                     .font(.body)
@@ -311,14 +288,9 @@ struct EntryDetailView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(EntryKindStyle.color(for: entry.kind).opacity(0.15))
-                    .frame(width: 44, height: 44)
-                Image(systemName: EntryKindStyle.icon(for: entry.kind))
-                    .foregroundStyle(EntryKindStyle.color(for: entry.kind))
-            }
+        HStack(spacing: DS.Space.m) {
+            IconTile(icon: EntryKindStyle.icon(for: entry.kind),
+                     tint: EntryKindStyle.color(for: entry.kind), size: 44)
             VStack(alignment: .leading, spacing: 2) {
                 Text(TimestampFormat.absolute(entry.ts))
                     .font(.subheadline.weight(.medium))
@@ -359,7 +331,7 @@ struct EntryDetailView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(maxHeight: 280)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.control, style: .continuous))
                             .accessibilityLabel("Photo the glasses captured for this entry")
                     }
                 case .unavailable:
