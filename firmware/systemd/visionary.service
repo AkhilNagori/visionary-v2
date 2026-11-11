@@ -1,5 +1,5 @@
 [Unit]
-Description=Visionary AI glasses firmware
+Description=Visionary GPT-Live glasses firmware
 Wants=network-online.target
 After=network-online.target sound.target
 
@@ -7,9 +7,12 @@ After=network-online.target sound.target
 Type=simple
 WorkingDirectory=/opt/visionary/app
 EnvironmentFile=/etc/visionary.env
-ExecStart=/usr/bin/python3 main.py
+ExecStart=/usr/bin/python3 -u main.py
 Restart=on-failure
 RestartSec=3
+# Let Python close ALSA and finalize the cloud session before group cleanup.
+KillMode=mixed
+TimeoutStopSec=35
 
 [Install]
 WantedBy=multi-user.target

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Visionary firmware entrypoint: gesture engine, action dispatcher, UDS
-command server, boot sequence, and the Tier 3 background lifecycle.
+"""Visionary entrypoint: GPT-Live by default; legacy runtime retained for rollback.
 
-Hardware mode drives a GPIO button; SIM mode (VISIONARY_SIM=1) drives
-everything from a stdin REPL. A slow config watcher keeps the background
-threads (two-way interpreter and navigation assist) in sync with config.json
-and opportunistically reindexes visual memory."""
+The code below is only activated with VISIONARY_RUNTIME=legacy. The default
+main() dispatches to live_main, which owns one continuous voice session and
+button-triggered photos without starting the old mode/background workers.
+"""
 
 import base64
 import json
@@ -840,6 +839,10 @@ def run_sim(dispatcher: Dispatcher) -> None:
 
 
 def main() -> None:
+    if os.environ.get("VISIONARY_RUNTIME", "live").strip().lower() != "legacy":
+        from live_main import main as run_live
+        run_live()
+        return
     global _server, _dispatcher
     dispatcher = Dispatcher()
     _dispatcher = dispatcher

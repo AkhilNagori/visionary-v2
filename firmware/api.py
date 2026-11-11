@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 import state
 
-VERSION = "1.0.0"
+VERSION = "2.0.0-live"
 SOCK_PATH = os.path.join(state.HOME, "visionary.sock")
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 # The running app dir is a flattened copy of firmware/, so it can't be a git tree.
@@ -28,7 +28,33 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.join(state.HOME, "src")
 FIRMWARE_DIR = os.path.join(REPO_DIR, "firmware")
 LIVE_BOUNDARY = "visionaryframe"
-CAPTURE_MODES = ("read", "describe", "recorder")
+CAPTURE_MODES = ("photo", "read", "describe", "recorder")
+
+
+def _is_live_runtime() -> bool:
+    return os.environ.get("VISIONARY_RUNTIME", "live").strip().lower() != "legacy"
+
+
+def _require_legacy(feature: str) -> None:
+    if _is_live_runtime():
+        raise HTTPException(
+            status_code=409,
+            detail=feature + " is inactive in GPT-Live mode; use the live conversation",
+        )
+
+
+def _command_error(resp: dict, fallback: str) -> None:
+    if resp.get("ok"):
+        return
+    error = str(resp.get("error") or fallback)
+    if error in ("busy", "paused", "not_connected", "not_ready", "disconnected",
+                 "not_connected_or_paused", "closing"):
+        raise HTTPException(status_code=409, detail=error)
+    if error in ("invalid_text", "invalid_action", "bad_request"):
+        raise HTTPException(status_code=422, detail=error)
+    if any(word in error.lower() for word in ("unsupported", "inactive", "not available", "disabled")):
+        raise HTTPException(status_code=409, detail=error)
+    raise HTTPException(status_code=503, detail=error)
 
 
 def require_token(request: Request) -> None:
@@ -70,6 +96,10 @@ class CaptureBody(BaseModel):
 
 class SpeakBody(BaseModel):
     text: str
+
+
+class ConversationBody(BaseModel):
+    action: str
 
 
 class WifiBody(BaseModel):
@@ -127,7 +157,7 @@ def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
 @app.get("/status")
 def get_status() -> Dict[str, Any]:
     st = uds_call({"cmd": "status"})
-    return {
+    result = {
         "online": bool(st.get("online")),
         "battery": None,
         "wifi": _wifi_ssid(),
@@ -136,6 +166,12 @@ def get_status() -> Dict[str, Any]:
         "busy": bool(st.get("busy")),
         "recording": bool(st.get("recording")),
     }
+    for name in ("runtime", "connected", "paused", "state", "last_error",
+                 "session_id", "usage_seconds", "usage_finalized", "echo_guard", "camera_available",
+                 "camera_error", "listening"):
+        if name in st:
+            result[name] = st[name]
+    return result
 
 
 @app.get("/config")
@@ -145,6 +181,7 @@ def get_config() -> Dict[str, Any]:
 
 @app.put("/config")
 def put_config(patch: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    _require_legacy("Legacy settings")
     unknown = sorted(set(patch) - set(state.DEFAULT_CONFIG))
     if unknown:
         raise HTTPException(
@@ -186,12 +223,22 @@ def capture(body: CaptureBody) -> Dict[str, Any]:
         raise HTTPException(
             status_code=422, detail="mode must be one of: " + ", ".join(CAPTURE_MODES)
         )
+    if body.mode == "recorder":
+        _require_legacy("Recorder")
     resp = uds_call({"cmd": "capture", "mode": body.mode})
-    if not resp.get("ok"):
-        if resp.get("error") == "busy":
-            raise HTTPException(status_code=409, detail="device is busy")
-        raise HTTPException(status_code=500, detail=resp.get("error") or "capture failed")
+    _command_error(resp, "capture failed")
     return {"ok": True}
+
+
+@app.post("/conversation")
+def conversation(body: ConversationBody) -> Dict[str, Any]:
+    if body.action not in ("pause", "resume", "toggle"):
+        raise HTTPException(status_code=422, detail="action must be pause, resume, or toggle")
+    if not _is_live_runtime():
+        raise HTTPException(status_code=409, detail="GPT-Live runtime is not enabled")
+    resp = uds_call({"cmd": "live_control", "action": body.action})
+    _command_error(resp, "conversation control failed")
+    return resp
 
 
 def _mjpeg_part(jpeg: bytes) -> bytes:
@@ -235,8 +282,7 @@ def speak(body: SpeakBody) -> Dict[str, Any]:
     if not text:
         raise HTTPException(status_code=422, detail="text must not be empty")
     resp = uds_call({"cmd": "speak", "text": text})
-    if not resp.get("ok"):
-        raise HTTPException(status_code=500, detail=resp.get("error") or "speak failed")
+    _command_error(resp, "speak failed")
     return {"ok": True}
 
 
@@ -323,6 +369,7 @@ def update() -> Dict[str, Any]:
 def memory_search(
     q: str = Query(..., min_length=1), k: int = Query(5, ge=1, le=50)
 ) -> Dict[str, Any]:
+    _require_legacy("Embedded memory search")
     import memory  # lazy: keeps api importable even where numpy/openai are absent
     return {"results": memory.search(q, k)}
 
@@ -354,6 +401,8 @@ def complete_action(action_id: int, body: ActionResultBody) -> Dict[str, Any]:
 
 @app.get("/modes")
 def get_modes() -> Dict[str, Any]:
+    if _is_live_runtime():
+        return {"modes": {}, "active_mode": None, "runtime": "live"}
     import packs  # lazy: modes-as-data pack loader
     return {
         "modes": packs.load_modes(),
@@ -363,6 +412,7 @@ def get_modes() -> Dict[str, Any]:
 
 @app.post("/modes/active")
 def set_active_mode(body: ActiveModeBody) -> Dict[str, Any]:
+    _require_legacy("Mode packs")
     mode_id = body.id
     if mode_id is not None:
         import packs
@@ -382,6 +432,7 @@ def get_packs() -> Dict[str, Any]:
 
 @app.post("/packs/install")
 def install_pack(body: PackInstallBody) -> Dict[str, Any]:
+    _require_legacy("Mode packs")
     url = body.url.strip()
     if not url:
         raise HTTPException(status_code=422, detail="url must not be empty")
@@ -395,6 +446,7 @@ def install_pack(body: PackInstallBody) -> Dict[str, Any]:
 
 @app.delete("/packs/{name}")
 def delete_pack(name: str) -> Dict[str, Any]:
+    _require_legacy("Mode packs")
     import packs
     if not packs.remove_pack(name):
         raise HTTPException(status_code=404, detail="unknown pack or pack is builtin")
@@ -446,6 +498,7 @@ def event_stream() -> StreamingResponse:
 
 @app.post("/flashcards/generate")
 def flashcards_generate(body: Optional[FlashcardsGenerateBody] = None) -> Dict[str, Any]:
+    _require_legacy("Flashcard generation")
     n = body.n if body else 20
     if n < 1 or n > 100:
         raise HTTPException(status_code=422, detail="n must be between 1 and 100")
@@ -482,6 +535,7 @@ def flashcards_review(card_id: int, body: ReviewBody) -> Dict[str, Any]:
 
 @app.post("/listen")
 def listen(body: Optional[ListenBody] = None) -> Dict[str, Any]:
+    _require_legacy("Separate microphone recording")
     # The api process has no mic; recording + transcription happen in the main
     # service, reached via the UDS "listen" command (max_s + headroom timeout so
     # the socket read outlives the recording and whisper transcription).

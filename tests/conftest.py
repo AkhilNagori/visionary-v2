@@ -40,7 +40,7 @@ for _sub in ("firmware", "dashboard"):
 # purge it, harmlessly).
 _FIRMWARE_MODULES = frozenset(
     ("state", "audio", "brain", "vision", "metrics", "main", "memory",
-     "api", "app", "packs")
+     "api", "app", "packs", "live_client", "live_audio", "live_main")
 )
 
 
@@ -59,13 +59,19 @@ def visionary_env(monkeypatch):
     home = tempfile.mkdtemp(dir="/tmp", prefix="vh")
     monkeypatch.setenv("VISIONARY_SIM", "1")
     monkeypatch.setenv("VISIONARY_HOME", home)
+    # Existing tests exercise the archived runtime explicitly. Live tests opt
+    # into the new default; no test opens a billable cloud session.
+    monkeypatch.setenv("VISIONARY_RUNTIME", "legacy")
     # Tests opt in to keys/fixtures explicitly; never inherit the dev shell's.
     for var in ("OPENAI_API_KEY",
                 "VISIONARY_SIM_IMAGE", "VISIONARY_SIM_WAV",
                 "VISIONARY_MODEL", "VISIONARY_STT_MODEL",
                 "VISIONARY_TTS_MODEL", "VISIONARY_TTS_VOICE",
                 "VISIONARY_ALSA_CAPTURE", "VISIONARY_MIC_CHANNEL",
-                "VISIONARY_MIC_GAIN_DB", "VISIONARY_MIC_HIGHPASS_HZ"):
+                "VISIONARY_MIC_GAIN_DB", "VISIONARY_MIC_HIGHPASS_HZ",
+                "VISIONARY_ALSA_PLAYBACK", "VISIONARY_LIVE_MODEL",
+                "VISIONARY_LIVE_BACKEND_MODEL", "VISIONARY_LIVE_VOICE",
+                "VISIONARY_LIVE_ECHO_GUARD", "VISIONARY_LIVE_LOG_TRANSCRIPTS"):
         monkeypatch.delenv(var, raising=False)
     _purge_firmware_modules()
     yield home
