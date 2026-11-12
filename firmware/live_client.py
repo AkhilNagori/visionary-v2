@@ -23,6 +23,7 @@ LIVE_URL = "wss://api.openai.com/v1/live/sessions"
 START_TIMEOUT = 20.0
 CLOSE_TIMEOUT = 15.0
 MAX_PHOTO_BYTES = 4 * 1024 * 1024
+MAX_PREROLL_BYTES = 24000 * 2  # at most one second of startup PCM16
 
 VOICE_INSTRUCTIONS = """You are Visionary, a calm, helpful voice companion in smart glasses.
 Talk naturally with the wearer. Keep ordinary replies to one or two short sentences.
@@ -353,6 +354,7 @@ class LiveClient:
         sender_stop = threading.Event()
         failures = queue.Queue(maxsize=1)
         send_lock = threading.Lock()
+        preroll = bytearray()
         try:
             while True:
                 ending = self._end_session.is_set() or self._stop.is_set()
@@ -414,6 +416,9 @@ class LiveClient:
                         io.start()
                         if self._end_session.is_set() or self._stop.is_set():
                             continue
+                        if preroll:
+                            io.write(bytes(preroll))
+                            preroll.clear()
                         self._connected = True
                         self._last_error = None
                         self._set_state("listening")
@@ -432,7 +437,14 @@ class LiveClient:
                         if self._paused or self._end_session.is_set() or self._stop.is_set():
                             continue
                         if not self._audio:
-                            raise RuntimeError("server sent audio before session.started")
+                            # The live service can emit a few audio preroll
+                            # packets before its session.started acknowledgement.
+                            # Buffer only a bounded second; do not open ALSA or
+                            # send microphone media before that acknowledgement.
+                            if len(preroll) + len(pcm) > MAX_PREROLL_BYTES:
+                                raise ValueError("GPT-Live startup audio exceeded one second without session.started")
+                            preroll.extend(pcm)
+                            continue
                         if pcm:
                             self._audio.write(pcm)
                 elif kind == "session.input_transcript.delta":

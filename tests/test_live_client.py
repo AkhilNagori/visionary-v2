@@ -173,6 +173,41 @@ def test_stream_audio_photo_and_close_finalize_usage(load):
     assert audio.closed and ws.closed
 
 
+def test_startup_audio_preroll_waits_for_acknowledgement(load):
+    live = load("live_client")
+    ws, audio = FakeSocket(started=False), FakeAudio()
+    client = live.LiveClient(lambda: ws, lambda: audio)
+    client.start()
+    try:
+        wait_for(lambda: ws.sent)
+        ws.emit({"type": "session.output_audio.delta", "delta": "AQI="})
+        wait_for(lambda: ws.incoming.empty())
+        assert not audio.started
+        assert not audio.played
+        assert [e["type"] for e in ws.sent] == ["session.start"]
+        ws.emit({"type": "session.started", "session": {"id": "live_test"}})
+        wait_for(lambda: client.status()["connected"])
+        assert audio.played == [b"\x01\x02"]
+    finally:
+        client.close()
+
+
+def test_startup_audio_preroll_is_bounded_and_configuration_pauses(load):
+    live = load("live_client")
+    ws, audio = FakeSocket(started=False), FakeAudio()
+    client = live.LiveClient(lambda: ws, lambda: audio)
+    client.start()
+    try:
+        wait_for(lambda: ws.sent)
+        pcm = bytes(live.MAX_PREROLL_BYTES + 2)
+        ws.emit({"type": "session.output_audio.delta", "delta": base64.b64encode(pcm).decode()})
+        wait_for(lambda: ws.closed)
+        assert client.status()["paused"]
+        assert not audio.started
+    finally:
+        client.close()
+
+
 def test_pause_stops_mic_and_resume_starts_fresh_session(load):
     live = load("live_client")
     sockets, audios = [], []
