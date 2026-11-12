@@ -143,7 +143,10 @@ class LiveClient:
             raise ValueError("OPENAI_API_KEY is not configured in /etc/visionary.env")
         return websocket.create_connection(
             LIVE_URL, header={"Authorization": "Bearer " + key},
-            timeout=10, enable_multithread=True,
+            # websocket-client adds a browser-style Origin by default. This
+            # trusted device uses server API-key authentication, not a browser
+            # origin; Live rejects that implicit header with HTTP 403.
+            suppress_origin=True, timeout=10, enable_multithread=True,
         )
 
     def _new_audio(self):
@@ -297,10 +300,12 @@ class LiveClient:
                 self._session()
                 retry = 1.0
             except Exception as exc:
-                self._error(exc)
+                code = getattr(exc, "status_code", None)
+                # Handshake exceptions include response headers (including
+                # cookies). Log only the status, never the full HTTP exchange.
+                self._error("GPT-Live WebSocket HTTP %s" % code if code else exc)
                 # Credentials/configuration failures need operator action, not
                 # an endless sequence of billed failed conversations.
-                code = getattr(exc, "status_code", None)
                 if isinstance(exc, (ValueError, ImportError)) or code in (400, 401, 403):
                     with self._lock:
                         self._paused = True

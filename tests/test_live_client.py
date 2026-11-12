@@ -3,8 +3,10 @@
 import base64
 import json
 import queue
+import sys
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -89,6 +91,23 @@ def test_session_uses_live_protocol_and_vision_backend(load):
     assert session["store"] is False
     assert "<|SpawnThinking|>" in session["instructions"]
     assert "turn_detection" not in session
+
+
+def test_server_connection_omits_browser_origin(load, monkeypatch):
+    live = load("live_client")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-real")
+    calls = []
+    sentinel = object()
+
+    def connect(url, **kwargs):
+        calls.append((url, kwargs))
+        return sentinel
+
+    monkeypatch.setitem(sys.modules, "websocket", SimpleNamespace(create_connection=connect))
+    assert live.LiveClient._connect() is sentinel
+    assert calls[0][0] == live.LIVE_URL
+    assert calls[0][1]["suppress_origin"] is True
+    assert calls[0][1]["header"] == {"Authorization": "Bearer sk-test-not-real"}
 
 
 def test_photo_is_sent_to_backend_then_response_is_created(load):
